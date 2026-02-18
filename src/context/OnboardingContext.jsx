@@ -11,12 +11,15 @@ export function OnboardingProvider({ children }) {
         studentCount: 30,
     });
 
+    // Holds the real pipeline result after a scan
+    const [scanResult, setScanResult] = useState(null);
+
     const updateData = (updates) => {
         setData(prev => ({ ...prev, ...updates }));
     };
 
     return (
-        <OnboardingContext.Provider value={{ data, updateData }}>
+        <OnboardingContext.Provider value={{ data, updateData, scanResult, setScanResult }}>
             {children}
         </OnboardingContext.Provider>
     );

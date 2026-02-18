@@ -3,19 +3,26 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboarding } from '../context/OnboardingContext';
 import ScanAnimation from '../components/ScanAnimation';
-import { Camera, X, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Camera, X, ShieldAlert, RefreshCw, FlipHorizontal, Lightbulb, Loader2 } from 'lucide-react';
+import { captureWithQualityGate } from '../lib/captureUtils';
+import { analyzeWithLogicEngine } from '../lib/analysisEngine';
+import { normalizeAndStore } from '../lib/storageLayer';
 
 export default function ScanScreen() {
     const navigate = useNavigate();
-    const { data } = useOnboarding();
+    const { data, setScanResult } = useOnboarding();
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
 
-    // Phases: 'requesting' → 'preview' → 'scanning' → 'complete' | 'denied'
+    // Phases: 'requesting' → 'preview' → 'scanning' → 'analyzing' → 'complete' | 'denied' | 'quality_fail'
     const [phase, setPhase] = useState('requesting');
     const [freezeFrame, setFreezeFrame] = useState(null);
     const [cameraReady, setCameraReady] = useState(false);
+    const [facingMode, setFacingMode] = useState('environment');
+    const [qualityIssue, setQualityIssue] = useState(null); // { reason, suggestion }
+    const [analyzeStatus, setAnalyzeStatus] = useState(''); // progress message
+    const sessionIdRef = useRef(`session_${Date.now()}`);
 
     // ═══════════════════════════════════════════
     //  CAMERA LIFECYCLE
@@ -28,12 +35,18 @@ export default function ScanScreen() {
         }
     }, []);
 
-    const startCamera = useCallback(async () => {
+    const startCamera = useCallback(async (facing = 'environment') => {
         try {
-            // This triggers the REAL browser permission prompt
+            // Stop any existing stream before switching
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+                streamRef.current = null;
+            }
+            setCameraReady(false);
+
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
-                    facingMode: 'environment',   // Back camera on mobile
+                    facingMode: facing,
                     width: { ideal: 1920 },
                     height: { ideal: 1080 },
                 },
@@ -71,8 +84,14 @@ export default function ScanScreen() {
     // ═══════════════════════════════════════════
 
     const handleAllowClick = () => {
-        startCamera();
+        startCamera(facingMode);
         setPhase('preview');
+    };
+
+    const handleFlipCamera = () => {
+        const newFacing = facingMode === 'environment' ? 'user' : 'environment';
+        setFacingMode(newFacing);
+        startCamera(newFacing);
     };
 
     const handleVideoReady = () => {
@@ -81,27 +100,66 @@ export default function ScanScreen() {
     };
 
     const handleCaptureScan = () => {
-        // Freeze the current frame to a canvas so the scan animation runs on a still image
-        if (videoRef.current && canvasRef.current) {
-            const video = videoRef.current;
-            const canvas = canvasRef.current;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            setFreezeFrame(canvas.toDataURL('image/jpeg', 0.92));
+        // 1. Quality gate — check image before committing to scan
+        const capture = captureWithQualityGate(videoRef);
+
+        if (!capture.success) {
+            setQualityIssue({ reason: capture.reason, suggestion: capture.suggestion });
+            setPhase('quality_fail');
+            return;
         }
+
+        // 2. Freeze the good frame for the scan animation
+        if (canvasRef.current) {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                canvas.width = img.width;
+                canvas.height = img.height;
+                canvas.getContext('2d').drawImage(img, 0, 0);
+            };
+            img.src = capture.image;
+        }
+        setFreezeFrame(capture.image);
         setPhase('scanning');
+
+        // Store capture for pipeline (will be used after animation)
+        sessionIdRef.captureData = capture;
     };
 
-    const handleScanComplete = () => {
-        setPhase('complete');
+    const handleScanComplete = async () => {
+        // 3. After animation finishes → run LLM analysis
+        setPhase('analyzing');
+        const capture = sessionIdRef.captureData;
+
+        try {
+            setAnalyzeStatus('Reading handwriting…');
+            const analysis = await analyzeWithLogicEngine(capture?.image, { subject: data.subject });
+
+            setAnalyzeStatus('Tracing logic pathway…');
+            const stored = await normalizeAndStore(analysis, capture?.metadata, sessionIdRef.current);
+
+            // Push result into context for ResultsDashboard
+            setScanResult(stored.success ? stored.result : analysis);
+            setPhase('complete');
+        } catch (err) {
+            console.error('[Lymbic] Pipeline error:', err);
+            setScanResult(null);
+            setPhase('complete'); // still navigate — dashboard shows mock
+        }
     };
 
     const handleRetry = () => {
         setPhase('requesting');
         setCameraReady(false);
         setFreezeFrame(null);
+        setQualityIssue(null);
+    };
+
+    const handleRetryCapture = () => {
+        setPhase('preview');
+        setQualityIssue(null);
     };
 
     // ═══════════════════════════════════════════
@@ -237,6 +295,122 @@ export default function ScanScreen() {
                 )}
             </AnimatePresence>
 
+            {/* ─── QUALITY FAIL STATE ─── */}
+            <AnimatePresence>
+                {phase === 'quality_fail' && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', zIndex: 50, padding: '24px' }}
+                    >
+                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="glass-card-elevated"
+                            style={{ maxWidth: 360, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '20px', padding: '32px' }}
+                        >
+                            <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(251,191,36,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', border: '1px solid rgba(251,191,36,0.3)' }}>
+                                <Lightbulb size={28} color="#fbbf24" />
+                            </div>
+                            <div>
+                                <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '8px' }}>Image Quality Too Low</p>
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                                    {qualityIssue?.suggestion || 'Please adjust the lighting and try again.'}
+                                </p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button className="btn-secondary" style={{ flex: 1, padding: '12px' }} onClick={() => navigate('/grade')}>Cancel</button>
+                                <motion.button className="btn-primary" style={{ flex: 1, padding: '12px', gap: '6px' }} whileTap={{ scale: 0.97 }} onClick={handleRetryCapture}>
+                                    <RefreshCw size={16} /> Try Again
+                                </motion.button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ─── ANALYZING STATE ─── */}
+            <AnimatePresence>
+                {phase === 'analyzing' && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.92)', zIndex: 50, padding: '24px' }}
+                    >
+                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
+                            style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}
+                        >
+                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+                                style={{ width: 56, height: 56, borderRadius: '50%', border: '3px solid rgba(139,92,246,0.2)', borderTop: '3px solid var(--lymbic-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Loader2 size={24} color="var(--lymbic-purple)" />
+                            </motion.div>
+                            <div>
+                                <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '6px' }}>Lymbic is thinking…</p>
+                                <motion.p key={analyzeStatus} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                                    style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}
+                                >
+                                    {analyzeStatus || 'Initializing analysis…'}
+                                </motion.p>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ─── QUALITY FAIL STATE ─── */}
+            <AnimatePresence>
+                {phase === 'quality_fail' && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', zIndex: 50, padding: '24px' }}
+                    >
+                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="glass-card-elevated"
+                            style={{ maxWidth: 360, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '20px', padding: '32px' }}
+                        >
+                            <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(251,191,36,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', border: '1px solid rgba(251,191,36,0.3)' }}>
+                                <Lightbulb size={28} color="#fbbf24" />
+                            </div>
+                            <div>
+                                <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '8px' }}>Image Quality Too Low</p>
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                                    {qualityIssue?.suggestion || 'Please adjust the lighting and try again.'}
+                                </p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button className="btn-secondary" style={{ flex: 1, padding: '12px' }} onClick={() => navigate('/grade')}>Cancel</button>
+                                <motion.button className="btn-primary" style={{ flex: 1, padding: '12px', gap: '6px' }} whileTap={{ scale: 0.97 }} onClick={handleRetryCapture}>
+                                    <RefreshCw size={16} /> Try Again
+                                </motion.button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ─── ANALYZING STATE ─── */}
+            <AnimatePresence>
+                {phase === 'analyzing' && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.92)', zIndex: 50, padding: '24px' }}
+                    >
+                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
+                            style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}
+                        >
+                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+                                style={{ width: 56, height: 56, borderRadius: '50%', border: '3px solid rgba(139,92,246,0.2)', borderTop: '3px solid var(--lymbic-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Loader2 size={24} color="var(--lymbic-purple)" />
+                            </motion.div>
+                            <div>
+                                <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '6px' }}>Lymbic is thinking…</p>
+                                <motion.p key={analyzeStatus} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                                    style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}
+                                >
+                                    {analyzeStatus || 'Initializing analysis…'}
+                                </motion.p>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* ─── TOP BAR ─── */}
             {phase !== 'requesting' && phase !== 'denied' && (
                 <div style={{
@@ -247,15 +421,33 @@ export default function ScanScreen() {
                     <span style={{ color: 'white', fontWeight: 600, fontSize: '0.95rem' }}>
                         {data.subject || 'Physics'} — Scan
                     </span>
-                    <button
-                        onClick={() => { stopCamera(); navigate('/grade'); }}
-                        style={{
-                            width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}
-                    >
-                        <X size={18} color="white" />
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        {phase === 'preview' && cameraReady && (
+                            <motion.button
+                                whileTap={{ scale: 0.9, rotate: 180 }}
+                                transition={{ duration: 0.3 }}
+                                onClick={handleFlipCamera}
+                                title="Flip camera"
+                                style={{
+                                    width: 36, height: 36, borderRadius: '50%',
+                                    background: 'rgba(255,255,255,0.15)',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                            >
+                                <FlipHorizontal size={18} color="white" />
+                            </motion.button>
+                        )}
+                        <button
+                            onClick={() => { stopCamera(); navigate('/grade'); }}
+                            style={{
+                                width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                        >
+                            <X size={18} color="white" />
+                        </button>
+                    </div>
                 </div>
             )}
 

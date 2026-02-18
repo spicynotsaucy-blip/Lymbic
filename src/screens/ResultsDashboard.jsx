@@ -74,11 +74,45 @@ const STUDENTS = [
 
 export default function ResultsDashboard() {
     const navigate = useNavigate();
-    const { data } = useOnboarding();
+    const { data, scanResult } = useOnboarding();
     const [expandedId, setExpandedId] = useState(null);
+    const [corrections, setCorrections] = useState({});
 
-    const avgScore = Math.round(STUDENTS.reduce((a, s) => a + s.score, 0) / STUDENTS.length);
-    const errorCount = STUDENTS.filter(s => s.errorType).length;
+    // Build display list: real result first (if available), then mock students
+    const displayStudents = scanResult
+        ? [
+            {
+                id: 'real',
+                grade: scanResult.score >= 90 ? 'A' : scanResult.score >= 80 ? 'B' : scanResult.score >= 70 ? 'C' : scanResult.score >= 60 ? 'D' : 'F',
+                gradeColor: scanResult.score >= 90 ? 'var(--grade-a)' : scanResult.score >= 80 ? 'var(--grade-b)' : scanResult.score >= 70 ? 'var(--grade-c)' : 'var(--grade-f)',
+                score: scanResult.score,
+                errorType: scanResult.divergencePoint?.errorType?.replace('_', ' ') || null,
+                feedback: scanResult.remediation,
+                logicTrace: {
+                    steps: scanResult.logicTrace.map(s => s.content),
+                    divergence: scanResult.logicTrace.findIndex(s => !s.isValid),
+                },
+                isReal: true,
+                traceId: scanResult.id,
+                confidence: scanResult.confidence,
+            },
+            ...STUDENTS,
+        ]
+        : STUDENTS;
+
+    const avgScore = Math.round(displayStudents.reduce((a, s) => a + s.score, 0) / displayStudents.length);
+    const errorCount = displayStudents.filter(s => s.errorType).length;
+
+    const handleFlag = async (student) => {
+        const { submitCorrection } = await import('../lib/storageLayer');
+        await submitCorrection(student.traceId, {
+            originalErrorType: student.errorType,
+            actualErrorType: 'MANUAL_REVIEW',
+            notes: 'Teacher flagged as incorrect',
+        });
+        setCorrections(prev => ({ ...prev, [student.id]: true }));
+    };
+
 
     return (
         <motion.div
