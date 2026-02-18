@@ -4,10 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboarding } from '../context/OnboardingContext';
 import ScanAnimation from '../components/ScanAnimation';
 import { Camera, X, ShieldAlert, RefreshCw, FlipHorizontal, Lightbulb, Loader2 } from 'lucide-react';
-import { captureWithQualityGate } from '../lib/captureUtils';
-import { analyzeWithLogicEngine } from '../lib/analysisEngine';
 import { normalizeAndStore } from '../lib/storageLayer';
-import useDocumentScanner from '../hooks/useDocumentScanner';
+import useSmartScanner from '../hooks/useSmartScanner';
 import DocumentOverlay from '../components/DocumentOverlay';
 
 export default function ScanScreen() {
@@ -26,8 +24,9 @@ export default function ScanScreen() {
     const [analyzeStatus, setAnalyzeStatus] = useState(''); // progress message
     const sessionIdRef = useRef(`session_${Date.now()}`);
 
-    // Intelligent document detection — runs at ~5fps during preview
-    const detection = useDocumentScanner(videoRef, 200);
+    // Adaptive intelligence pipeline — detection + quality + analysis
+    const scanner = useSmartScanner(videoRef, { autoCapture: false, analysisMode: 'full' });
+    const detection = scanner.detection;
 
     // ═══════════════════════════════════════════
     //  CAMERA LIFECYCLE
@@ -104,17 +103,12 @@ export default function ScanScreen() {
         setCameraReady(true);
     };
 
-    const handleCaptureScan = () => {
-        // 1. Quality gate — check image before committing to scan
-        const capture = captureWithQualityGate(videoRef);
+    const handleCaptureScan = async () => {
+        // Smart scanner handles quality check + enhancement + dedup
+        const frameData = await scanner.forceCapture();
+        if (!frameData) return;
 
-        if (!capture.success) {
-            setQualityIssue({ reason: capture.reason, suggestion: capture.suggestion });
-            setPhase('quality_fail');
-            return;
-        }
-
-        // 2. Freeze the good frame for the scan animation
+        // Freeze the frame for the scan animation
         if (canvasRef.current) {
             const img = new Image();
             img.onload = () => {
@@ -124,34 +118,51 @@ export default function ScanScreen() {
                 canvas.height = img.height;
                 canvas.getContext('2d').drawImage(img, 0, 0);
             };
-            img.src = capture.image;
+            img.src = frameData;
         }
-        setFreezeFrame(capture.image);
+        setFreezeFrame(frameData);
         setPhase('scanning');
 
-        // Store capture for pipeline (will be used after animation)
-        sessionIdRef.captureData = capture;
+        // Store captured frame for pipeline (used after animation)
+        sessionIdRef.captureData = { image: frameData, metadata: { qualityScore: scanner.qualityAnalysis?.overallScore ?? 1 } };
     };
 
     const handleScanComplete = async () => {
-        // 3. After animation finishes → run LLM analysis
+        // After animation finishes → run smart pipeline (quality + enhance + 3-pass analysis)
         setPhase('analyzing');
         const capture = sessionIdRef.captureData;
 
         try {
-            setAnalyzeStatus('Reading handwriting…');
-            const analysis = await analyzeWithLogicEngine(capture?.image, { subject: data.subject });
+            setAnalyzeStatus('Analyzing quality…');
+            const result = await scanner.capture();
 
-            setAnalyzeStatus('Tracing logic pathway…');
-            const stored = await normalizeAndStore(analysis, capture?.metadata, sessionIdRef.current);
+            if (result?.success) {
+                setAnalyzeStatus('Tracing logic pathway…');
+                const stored = await normalizeAndStore(
+                    result.result,
+                    { qualityScore: scanner.qualityAnalysis?.overallScore ?? 1 },
+                    sessionIdRef.current
+                );
 
-            // Push result into context for ResultsDashboard
-            setScanResult(stored.success ? stored.result : analysis);
-            setPhase('complete');
+                setScanResult(stored.success ? stored.result : result.result);
+                setPhase('complete');
+            } else if (result?.reason === 'quality') {
+                setQualityIssue({
+                    reason: 'Low image quality',
+                    suggestion: scanner.qualityAnalysis?.recommendations?.[0] || 'Try better lighting',
+                });
+                setPhase('quality_fail');
+            } else if (result?.reason === 'duplicate') {
+                setAnalyzeStatus('Duplicate detected — try a different page');
+                setPhase('preview');
+            } else {
+                setScanResult(null);
+                setPhase('complete');
+            }
         } catch (err) {
             console.error('[Lymbic] Pipeline error:', err);
             setScanResult(null);
-            setPhase('complete'); // still navigate — dashboard shows mock
+            setPhase('complete');
         }
     };
 
@@ -589,10 +600,10 @@ export default function ScanScreen() {
                         onClick={handleCaptureScan}
                         style={{
                             width: 72, height: 72, borderRadius: '50%',
-                            background: detection.detected && detection.isStable ? '#22c55e' : 'white',
-                            border: `4px solid ${detection.detected && detection.isStable ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.3)'}`,
+                            background: scanner.isReadyToCapture ? '#22c55e' : 'white',
+                            border: `4px solid ${scanner.isReadyToCapture ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.3)'}`,
                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                            boxShadow: detection.detected && detection.isStable
+                            boxShadow: scanner.isReadyToCapture
                                 ? '0 0 24px rgba(34,197,94,0.4)'
                                 : '0 0 24px rgba(255,255,255,0.2)',
                             transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease',
