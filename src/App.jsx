@@ -1,5 +1,6 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
+import { Analytics } from '@vercel/analytics/react';
 import SplashScreen from './screens/SplashScreen';
 import OnboardingWizard from './screens/OnboardingWizard';
 import GradeToday from './screens/GradeToday';
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/results" element={<ResultsDashboard />} />
         </Routes>
       </AnimatePresence>
+      <Analytics />
     </div>
   );
 }
