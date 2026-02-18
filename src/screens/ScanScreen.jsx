@@ -7,6 +7,8 @@ import { Camera, X, ShieldAlert, RefreshCw, FlipHorizontal, Lightbulb, Loader2 }
 import { captureWithQualityGate } from '../lib/captureUtils';
 import { analyzeWithLogicEngine } from '../lib/analysisEngine';
 import { normalizeAndStore } from '../lib/storageLayer';
+import useDocumentScanner from '../hooks/useDocumentScanner';
+import DocumentOverlay from '../components/DocumentOverlay';
 
 export default function ScanScreen() {
     const navigate = useNavigate();
@@ -23,6 +25,9 @@ export default function ScanScreen() {
     const [qualityIssue, setQualityIssue] = useState(null); // { reason, suggestion }
     const [analyzeStatus, setAnalyzeStatus] = useState(''); // progress message
     const sessionIdRef = useRef(`session_${Date.now()}`);
+
+    // Intelligent document detection — runs at ~5fps during preview
+    const detection = useDocumentScanner(videoRef, 200);
 
     // ═══════════════════════════════════════════
     //  CAMERA LIFECYCLE
@@ -510,47 +515,13 @@ export default function ScanScreen() {
                         </div>
                     )}
 
-                    {/* ─── AR OVERLAY: Edge Detection + Corners ─── */}
-                    {cameraReady && phase !== 'complete' && (
-                        <div style={{
-                            position: 'absolute', inset: '10% 8%', pointerEvents: 'none', zIndex: 5,
-                        }}>
-                            {/* Document detection border */}
-                            <div style={{
-                                position: 'absolute', inset: 0,
-                                border: '2px solid rgba(96, 165, 250, 0.6)',
-                                borderRadius: '8px',
-                                boxShadow: '0 0 12px rgba(96, 165, 250, 0.3)',
-                            }} />
-
-                            {/* Corner markers */}
-                            {[
-                                { top: -2, left: -2, borderTop: '3px solid #60A5FA', borderLeft: '3px solid #60A5FA' },
-                                { top: -2, right: -2, borderTop: '3px solid #60A5FA', borderRight: '3px solid #60A5FA' },
-                                { bottom: -2, left: -2, borderBottom: '3px solid #60A5FA', borderLeft: '3px solid #60A5FA' },
-                                { bottom: -2, right: -2, borderBottom: '3px solid #60A5FA', borderRight: '3px solid #60A5FA' },
-                            ].map((style, i) => (
-                                <div key={i} style={{ position: 'absolute', width: 24, height: 24, ...style }} />
-                            ))}
-
-                            {/* "Document detected" badge */}
-                            {phase === 'preview' && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: -5 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    style={{
-                                        position: 'absolute', top: -32, left: '50%', transform: 'translateX(-50%)',
-                                        padding: '4px 12px', background: 'rgba(96, 165, 250, 0.2)',
-                                        border: '1px solid rgba(96, 165, 250, 0.4)', borderRadius: '6px',
-                                        whiteSpace: 'nowrap',
-                                    }}
-                                >
-                                    <span style={{ color: '#60A5FA', fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.05em' }}>
-                                        DOCUMENT DETECTED
-                                    </span>
-                                </motion.div>
-                            )}
-                        </div>
+                    {/* ─── INTELLIGENT DOCUMENT OVERLAY ─── */}
+                    {cameraReady && phase === 'preview' && (
+                        <DocumentOverlay
+                            detection={detection}
+                            videoWidth={videoRef.current?.videoWidth || 1920}
+                            videoHeight={videoRef.current?.videoHeight || 1080}
+                        />
                     )}
 
                     {/* ─── SCANNING ANIMATION OVERLAY ─── */}
@@ -585,12 +556,6 @@ export default function ScanScreen() {
                 position: 'absolute', bottom: 80, left: 0, right: 0, textAlign: 'center', zIndex: 10,
             }}>
                 <AnimatePresence mode="wait">
-                    {phase === 'preview' && cameraReady && (
-                        <motion.p key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.85rem' }}>
-                            Position the worksheet inside the frame
-                        </motion.p>
-                    )}
                     {phase === 'scanning' && (
                         <motion.p key="scanning" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                             style={{ color: 'var(--lymbic-purple-light)', fontSize: '0.85rem', fontWeight: 500 }}>
@@ -623,10 +588,14 @@ export default function ScanScreen() {
                         whileTap={{ scale: 0.9 }}
                         onClick={handleCaptureScan}
                         style={{
-                            width: 72, height: 72, borderRadius: '50%', background: 'white',
-                            border: '4px solid rgba(255,255,255,0.3)',
+                            width: 72, height: 72, borderRadius: '50%',
+                            background: detection.detected && detection.isStable ? '#22c55e' : 'white',
+                            border: `4px solid ${detection.detected && detection.isStable ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.3)'}`,
                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                            boxShadow: '0 0 24px rgba(255,255,255,0.2)',
+                            boxShadow: detection.detected && detection.isStable
+                                ? '0 0 24px rgba(34,197,94,0.4)'
+                                : '0 0 24px rgba(255,255,255,0.2)',
+                            transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease',
                         }}
                     >
                         <div style={{
