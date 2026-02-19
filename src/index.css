@@ -1,5 +1,6 @@
 /* ============================================
-   LYMBIC DESIGN SYSTEM
+   LYMBIC DESIGN SYSTEM v2.0
+   Premium · Adaptive · Alive
    ============================================ */
 
 :root {
@@ -14,6 +15,14 @@
   --logic-green-bright: #10B981;
   --logic-green-glow: rgba(52, 211, 153, 0.3);
 
+  /* Extended Palette */
+  --accent-cyan: #22D3EE;
+  --accent-cyan-glow: rgba(34, 211, 238, 0.25);
+  --accent-rose: #FB7185;
+  --accent-rose-glow: rgba(251, 113, 133, 0.25);
+  --accent-amber: #FBBF24;
+  --accent-amber-glow: rgba(251, 191, 36, 0.25);
+
   /* Surfaces */
   --surface-dark: #0A0614;
   --surface-base: #0F0B1E;
@@ -21,6 +30,7 @@
   --surface-card-hover: #221A42;
   --surface-glass: rgba(124, 58, 237, 0.06);
   --surface-glass-border: rgba(124, 58, 237, 0.15);
+  --surface-elevated: rgba(124, 58, 237, 0.08);
 
   /* Text */
   --text-primary: #F5F3FF;
@@ -55,10 +65,12 @@
   --shadow-glow: 0 0 40px rgba(124, 58, 237, 0.15);
   --shadow-glow-strong: 0 0 60px rgba(124, 58, 237, 0.3);
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(124, 58, 237, 0.1);
 
   /* Transitions */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
   /* Emotion Fallbacks (Adaptive UI) */
   --emotion-primary-h: 270;
@@ -71,6 +83,10 @@
   --emotion-pulse-rate: 0s;
   --emotion-spring-stiffness: 300;
   --emotion-spring-damping: 30;
+
+  /* Typography */
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
 }
 
 /* ============================================
@@ -92,7 +108,7 @@ html {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-body);
   background: var(--surface-dark);
   color: var(--text-primary);
   min-height: 100vh;
@@ -162,6 +178,11 @@ button {
   border-radius: var(--radius-lg);
   padding: var(--space-lg);
   box-shadow: var(--shadow-card);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(124, 58, 237, 0.25);
 }
 
 .glass-card-elevated {
@@ -174,6 +195,12 @@ button {
   border-radius: var(--radius-lg);
   padding: var(--space-lg);
   box-shadow: var(--shadow-glow);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s var(--ease-out);
+}
+
+.glass-card-elevated:hover {
+  border-color: rgba(124, 58, 237, 0.35);
+  box-shadow: var(--shadow-glow-strong);
 }
 
 /* ============================================
@@ -181,13 +208,15 @@ button {
    ============================================ */
 
 .text-hero {
+  font-family: var(--font-display);
   font-size: 2.5rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.1;
 }
 
 .text-title {
+  font-family: var(--font-display);
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -228,6 +257,19 @@ button {
   background-clip: text;
 }
 
+.text-gradient-animated {
+  background: linear-gradient(270deg,
+      var(--lymbic-purple-light),
+      var(--accent-cyan),
+      var(--logic-green),
+      var(--lymbic-purple-light));
+  background-size: 600% 600%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shift 6s ease infinite;
+}
+
 /* ============================================
    BUTTONS
    ============================================ */
@@ -253,7 +295,7 @@ button {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, transparent, rgba(255, 255, 255, 0.1));
+  background: linear-gradient(135deg, transparent, rgba(255, 255, 255, 0.15));
   opacity: 0;
   transition: opacity 0.3s ease;
 }
@@ -269,6 +311,26 @@ button {
 
 .btn-primary:active {
   transform: translateY(0);
+}
+
+/* Ripple effect */
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 60%);
+  opacity: 0;
+  transform: scale(0);
+  transition: transform 0.5s ease, opacity 0.5s ease;
+  pointer-events: none;
+}
+
+.btn-primary:active::after {
+  opacity: 1;
+  transform: scale(1);
+  transition: 0s;
 }
 
 .btn-secondary {
@@ -290,6 +352,7 @@ button {
   background: var(--surface-glass);
   color: var(--text-primary);
   border-color: var(--lymbic-purple-light);
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.1);
 }
 
 /* ============================================
@@ -315,7 +378,7 @@ button {
 
 .input-field:focus {
   border-color: var(--lymbic-purple);
-  box-shadow: 0 0 0 3px var(--lymbic-purple-glow);
+  box-shadow: 0 0 0 3px var(--lymbic-purple-glow), 0 0 20px rgba(124, 58, 237, 0.1);
   background: rgba(124, 58, 237, 0.12);
 }
 
@@ -364,9 +427,11 @@ button {
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--lymbic-purple), var(--logic-green));
+  background: linear-gradient(90deg, var(--lymbic-purple), var(--accent-cyan), var(--logic-green));
+  background-size: 200% 100%;
   border-radius: var(--radius-full);
   transition: width 0.5s var(--ease-out);
+  animation: shimmer-bar 2s linear infinite;
 }
 
 /* ============================================
@@ -391,12 +456,15 @@ button {
   cursor: pointer;
   transition: all 0.25s var(--ease-out);
   user-select: none;
+  position: relative;
+  overflow: hidden;
 }
 
 .chip:hover {
   background: rgba(124, 58, 237, 0.15);
   border-color: var(--lymbic-purple-light);
   color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .chip.active {
@@ -404,6 +472,7 @@ button {
   border-color: var(--lymbic-purple);
   color: white;
   box-shadow: 0 2px 12px var(--lymbic-purple-glow);
+  transform: translateY(-1px);
 }
 
 /* ============================================
@@ -424,6 +493,18 @@ button {
   border-bottom-left-radius: var(--space-xs);
   align-self: flex-start;
   color: var(--text-primary);
+  position: relative;
+}
+
+.chat-bubble-ai::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.2), transparent 50%);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .chat-bubble-user {
@@ -434,15 +515,99 @@ button {
 }
 
 /* ============================================
+   TYPING INDICATOR
+   ============================================ */
+
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-glass-border);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--space-xs);
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lymbic-purple-light);
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* ============================================
+   SKELETON LOADING
+   ============================================ */
+
+.skeleton {
+  background: linear-gradient(90deg,
+      rgba(124, 58, 237, 0.05) 0%,
+      rgba(124, 58, 237, 0.12) 50%,
+      rgba(124, 58, 237, 0.05) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-text {
+  height: 14px;
+  margin-bottom: 8px;
+  width: 80%;
+}
+
+.skeleton-title {
+  height: 24px;
+  margin-bottom: 12px;
+  width: 60%;
+}
+
+.skeleton-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.skeleton-card {
+  height: 80px;
+  border-radius: var(--radius-lg);
+}
+
+/* ============================================
+   CONNECTING LINE (Wizard Steps)
+   ============================================ */
+
+.step-connector {
+  width: 2px;
+  height: 20px;
+  margin-left: 19px;
+  background: linear-gradient(180deg, var(--lymbic-purple-light), transparent);
+  opacity: 0.3;
+}
+
+/* ============================================
    BACKGROUND EFFECTS
    ============================================ */
 
 .bg-gradient-radial {
   position: fixed;
   inset: 0;
-  background: radial-gradient(ellipse 80% 60% at 50% 0%,
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%,
       rgba(124, 58, 237, 0.12) 0%,
-      transparent 70%);
+      transparent 70%),
+    radial-gradient(circle 400px at 80% 20%,
+      rgba(34, 211, 238, 0.04) 0%,
+      transparent 60%);
   pointer-events: none;
   z-index: 0;
 }
@@ -450,11 +615,52 @@ button {
 .bg-gradient-bottom {
   position: fixed;
   inset: 0;
-  background: radial-gradient(ellipse 60% 40% at 50% 100%,
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 100%,
       rgba(52, 211, 153, 0.06) 0%,
-      transparent 70%);
+      transparent 70%),
+    radial-gradient(circle 300px at 20% 80%,
+      rgba(124, 58, 237, 0.03) 0%,
+      transparent 50%);
   pointer-events: none;
   z-index: 0;
+}
+
+/* Ambient floating orbs */
+.bg-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-orb-1 {
+  width: 400px;
+  height: 400px;
+  background: var(--lymbic-purple);
+  top: -10%;
+  left: -5%;
+  animation: orb-float-1 20s ease-in-out infinite;
+}
+
+.bg-orb-2 {
+  width: 300px;
+  height: 300px;
+  background: var(--accent-cyan);
+  bottom: -5%;
+  right: -5%;
+  animation: orb-float-2 25s ease-in-out infinite;
+}
+
+.bg-orb-3 {
+  width: 200px;
+  height: 200px;
+  background: var(--logic-green);
+  top: 50%;
+  left: 60%;
+  animation: orb-float-3 18s ease-in-out infinite;
 }
 
 /* ============================================
@@ -495,6 +701,16 @@ button {
   }
 }
 
+@keyframes shimmer-bar {
+  0% {
+    background-position: 0% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
+}
+
 @keyframes scan-line {
   0% {
     top: 0;
@@ -502,6 +718,21 @@ button {
 
   100% {
     top: 100%;
+  }
+}
+
+@keyframes typing-bounce {
+
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-6px);
   }
 }
 
@@ -520,12 +751,42 @@ button {
   }
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 3s ease-in-out infinite;
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
-.animate-float {
-  animation: float 4s ease-in-out infinite;
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes breathe {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
 }
 
 @keyframes spin {
@@ -536,6 +797,98 @@ button {
   100% {
     transform: rotate(360deg);
   }
+}
+
+@keyframes orb-float-1 {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  25% {
+    transform: translate(60px, 40px) scale(1.1);
+  }
+
+  50% {
+    transform: translate(20px, 80px) scale(0.95);
+  }
+
+  75% {
+    transform: translate(-40px, 30px) scale(1.05);
+  }
+}
+
+@keyframes orb-float-2 {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  25% {
+    transform: translate(-50px, -30px) scale(1.05);
+  }
+
+  50% {
+    transform: translate(-20px, -60px) scale(0.9);
+  }
+
+  75% {
+    transform: translate(30px, -20px) scale(1.1);
+  }
+}
+
+@keyframes orb-float-3 {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(-30px, 40px) scale(1.1);
+  }
+
+  66% {
+    transform: translate(40px, -20px) scale(0.95);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes slide-up {
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+.animate-breathe {
+  animation: breathe 4s ease-in-out infinite;
 }
 
 /* ============================================
@@ -553,6 +906,12 @@ button {
 
   .screen {
     padding: var(--space-md);
+  }
+}
+
+@media (min-width: 768px) {
+  .screen-content {
+    max-width: 520px;
   }
 }
 

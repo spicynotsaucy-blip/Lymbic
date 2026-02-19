@@ -11,6 +11,10 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {/* Ambient background orbs */}
+      <div className="bg-orb bg-orb-1" />
+      <div className="bg-orb bg-orb-2" />
+      <div className="bg-orb bg-orb-3" />
       <div className="bg-gradient-radial" />
       <div className="bg-gradient-bottom" />
       <AnimatePresence mode="wait">
