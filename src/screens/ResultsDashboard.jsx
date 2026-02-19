@@ -1,106 +1,146 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboarding } from '../context/OnboardingContext';
 import {
     ArrowLeft, ChevronDown, ChevronUp, Brain, MessageSquare,
-    AlertTriangle, CheckCircle2, BarChart3, Users,
+    AlertTriangle, CheckCircle2, BarChart3, Users, Camera, Trash2, Clock,
 } from 'lucide-react';
 
-const STUDENTS = [
-    {
-        id: 1, grade: 'A', score: 94, gradeColor: 'var(--grade-a)', errorType: null,
-        feedback: "Excellent work. Your method is clean and your calculations are precise. Keep it up!",
-        logicTrace: { steps: ['Correct formulation', 'Correct algebra', 'Correct calculation', 'Correct conclusion'], divergence: null },
-    },
-    {
-        id: 2, grade: 'B+', score: 87, gradeColor: 'var(--grade-b)', errorType: 'Rounding Error',
-        feedback: "Strong understanding of the concept. You rounded too early in step 3 — carry the full decimal until the final answer.",
-        logicTrace: { steps: ['Correct formulation', 'Correct algebra', 'Premature rounding (lost precision)', 'Slightly off conclusion'], divergence: 2 },
-    },
-    {
-        id: 3, grade: 'C+', score: 72, gradeColor: 'var(--grade-c)', errorType: 'Sign Flip Error',
-        feedback: "You nailed the physics concept, but watch your signs! You flipped the negative in step 2. Check your side-work — you actually had it right in the margin.",
-        logicTrace: { steps: ['Correct formulation', 'Algebraic inversion error (sign flip)', 'Carried error forward', 'Faulty conclusion'], divergence: 1 },
-        scratchNote: "Student correctly calculated -14.14 on the right margin, but copied it as +14.14 in the main work.",
-    },
-    {
-        id: 4, grade: 'A-', score: 91, gradeColor: 'var(--grade-a)', errorType: null,
-        feedback: "Great work overall. Minor notation issue in step 2 but the logic is solid.",
-        logicTrace: { steps: ['Correct formulation', 'Correct algebra (minor notation)', 'Correct calculation', 'Correct conclusion'], divergence: null },
-    },
-    {
-        id: 5, grade: 'B', score: 83, gradeColor: 'var(--grade-b)', errorType: 'Unit Conversion',
-        feedback: "Good approach! You mixed up meters and centimeters in step 3. The physics reasoning is correct — just watch your units.",
-        logicTrace: { steps: ['Correct formulation', 'Correct algebra', 'Unit conversion error (m→cm)', 'Off by factor of 100'], divergence: 2 },
-    },
-    {
-        id: 6, grade: 'D', score: 58, gradeColor: 'var(--grade-d)', errorType: 'Conceptual Misunderstanding',
-        feedback: "I can see you're trying hard. The main issue is in step 1 — you used the wrong kinematic equation. Let's review projectile motion fundamentals.",
-        logicTrace: { steps: ['Wrong equation selected', 'Algebra on wrong equation', 'Compounded error', 'Incorrect conclusion'], divergence: 0 },
-    },
-    {
-        id: 7, grade: 'B-', score: 79, gradeColor: 'var(--grade-b)', errorType: 'Calculation Error',
-        feedback: "Your setup and understanding are great. Small arithmetic mistake multiplying in step 2. Double-check your multiplication.",
-        logicTrace: { steps: ['Correct formulation', 'Multiplication error (14.14 → 14.41)', 'Carried through', 'Slightly off'], divergence: 1 },
-    },
-    {
-        id: 8, grade: 'A', score: 97, gradeColor: 'var(--grade-a)', errorType: null,
-        feedback: "Perfect execution. Your scratchpad shows you even verified your answer — that's the mark of an excellent student.",
-        logicTrace: { steps: ['Correct formulation', 'Correct algebra', 'Correct calculation', 'Verified answer'], divergence: null },
-    },
-    {
-        id: 9, grade: 'C', score: 68, gradeColor: 'var(--grade-c)', errorType: 'Formula Recall Error',
-        feedback: "You remembered the right type of equation but mixed up the formula. Review the difference between range and height equations.",
-        logicTrace: { steps: ['Partially correct formulation', 'Correct algebra on wrong formula', 'Consistent error', 'Wrong but internally logical'], divergence: 0 },
-    },
-    {
-        id: 10, grade: 'F', score: 42, gradeColor: 'var(--grade-f)', errorType: 'Multiple Fundamental Errors',
-        feedback: "Don't get discouraged — I can see you attempted every step. Let's schedule a review session on the core kinematics equations. Your side-work shows good intuition.",
-        logicTrace: { steps: ['Incorrect equation', 'Algebraic error', 'Sign error', 'No verification'], divergence: 0 },
-        scratchNote: "Interestingly, the student drew a correct diagram in the margin showing the parabolic path — visual intuition is present but not yet connected to the math.",
-    },
-    {
-        id: 11, grade: 'B+', score: 86, gradeColor: 'var(--grade-b)', errorType: 'Transcription Error',
-        feedback: "Your logic is perfect! You just copied the wrong number from the question. Read the problem statement once more before calculating.",
-        logicTrace: { steps: ['Misread initial velocity (20→25)', 'Correct algebra on wrong value', 'Consistent', 'Off due to wrong input'], divergence: 0 },
-    },
-    {
-        id: 12, grade: 'A-', score: 90, gradeColor: 'var(--grade-a)', errorType: null,
-        feedback: "Very strong. Clean work, good process. The only note: label your units consistently.",
-        logicTrace: { steps: ['Correct formulation', 'Correct algebra', 'Correct but unlabeled units', 'Correct conclusion'], divergence: null },
-    },
-];
+// ═══════════════════════════════════════════════════════════
+//  Helper: Convert a stored trace record → display-ready student object
+// ═══════════════════════════════════════════════════════════
+function traceToStudent(record, index) {
+    const score = record.score ?? 0;
+    const grade = score >= 93 ? 'A' : score >= 90 ? 'A-' : score >= 87 ? 'B+'
+        : score >= 83 ? 'B' : score >= 80 ? 'B-' : score >= 77 ? 'C+'
+            : score >= 73 ? 'C' : score >= 70 ? 'C-' : score >= 60 ? 'D' : 'F';
 
+    const gradeColor = score >= 90 ? 'var(--grade-a)'
+        : score >= 80 ? 'var(--grade-b)'
+            : score >= 70 ? 'var(--grade-c)'
+                : score >= 60 ? 'var(--grade-d)'
+                    : 'var(--grade-f)';
+
+    // Parse logic_trace — it may be an array of step objects or a raw array
+    let steps = [];
+    let divergence = null;
+    if (Array.isArray(record.logic_trace)) {
+        steps = record.logic_trace.map(s => typeof s === 'string' ? s : s.content || `Step ${s.step}`);
+        divergence = record.logic_trace.findIndex(s => s.isValid === false);
+        if (divergence === -1) divergence = null;
+    }
+
+    // Parse divergence_point for error type
+    let errorType = null;
+    if (record.divergence_point) {
+        const dp = typeof record.divergence_point === 'string'
+            ? JSON.parse(record.divergence_point)
+            : record.divergence_point;
+        errorType = dp.errorType?.replace(/_/g, ' ') || null;
+        if (errorType === 'NONE' || errorType === 'None') errorType = null;
+    }
+
+    return {
+        id: record.id || `scan_${index}`,
+        traceId: record.id,
+        displayIndex: index + 1,
+        grade,
+        gradeColor,
+        score,
+        errorType,
+        feedback: record.remediation || 'No feedback available.',
+        logicTrace: { steps, divergence },
+        confidence: record.confidence ?? 0.8,
+        isCorrect: record.is_correct ?? (score >= 70),
+        timestamp: record.created_at,
+        sessionId: record.session_id,
+        captureQuality: record.capture_quality,
+        isReal: true,
+    };
+}
+
+// Convert a scanResult from OnboardingContext → display-ready student
+function scanResultToStudent(scanResult) {
+    const score = scanResult.score ?? 0;
+    const grade = score >= 93 ? 'A' : score >= 90 ? 'A-' : score >= 87 ? 'B+'
+        : score >= 83 ? 'B' : score >= 80 ? 'B-' : score >= 77 ? 'C+'
+            : score >= 73 ? 'C' : score >= 70 ? 'C-' : score >= 60 ? 'D' : 'F';
+
+    const gradeColor = score >= 90 ? 'var(--grade-a)'
+        : score >= 80 ? 'var(--grade-b)'
+            : score >= 70 ? 'var(--grade-c)'
+                : score >= 60 ? 'var(--grade-d)'
+                    : 'var(--grade-f)';
+
+    return {
+        id: 'current',
+        traceId: scanResult.id,
+        displayIndex: 0,
+        grade,
+        gradeColor,
+        score,
+        errorType: scanResult.divergencePoint?.errorType?.replace(/_/g, ' ') || null,
+        feedback: scanResult.remediation || 'No feedback available.',
+        logicTrace: {
+            steps: (scanResult.logicTrace || []).map(s => s.content || `Step ${s.step}`),
+            divergence: (scanResult.logicTrace || []).findIndex(s => !s.isValid),
+        },
+        confidence: scanResult.confidence,
+        isReal: true,
+        isCurrent: true,
+        timestamp: new Date().toISOString(),
+    };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RESULTS DASHBOARD — Real Data
+// ═══════════════════════════════════════════════════════════
 export default function ResultsDashboard() {
     const navigate = useNavigate();
     const { data, scanResult } = useOnboarding();
     const [expandedId, setExpandedId] = useState(null);
     const [corrections, setCorrections] = useState({});
+    const [storedTraces, setStoredTraces] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Build display list: real result first (if available), then mock students
-    const displayStudents = scanResult
-        ? [
-            {
-                id: 'real',
-                grade: scanResult.score >= 90 ? 'A' : scanResult.score >= 80 ? 'B' : scanResult.score >= 70 ? 'C' : scanResult.score >= 60 ? 'D' : 'F',
-                gradeColor: scanResult.score >= 90 ? 'var(--grade-a)' : scanResult.score >= 80 ? 'var(--grade-b)' : scanResult.score >= 70 ? 'var(--grade-c)' : 'var(--grade-f)',
-                score: scanResult.score,
-                errorType: scanResult.divergencePoint?.errorType?.replace('_', ' ') || null,
-                feedback: scanResult.remediation,
-                logicTrace: {
-                    steps: scanResult.logicTrace.map(s => s.content),
-                    divergence: scanResult.logicTrace.findIndex(s => !s.isValid),
-                },
-                isReal: true,
-                traceId: scanResult.id,
-                confidence: scanResult.confidence,
-            },
-            ...STUDENTS,
-        ]
-        : STUDENTS;
+    // Load traces from localStorage on mount
+    useEffect(() => {
+        const load = async () => {
+            const { getAllTraces } = await import('../lib/storageLayer');
+            const traces = getAllTraces();
+            setStoredTraces(traces);
+            setIsLoading(false);
+        };
+        load();
+    }, []);
 
-    const avgScore = Math.round(displayStudents.reduce((a, s) => a + s.score, 0) / displayStudents.length);
+    // Build display list: current scan first, then stored traces (deduped)
+    const displayStudents = (() => {
+        const students = [];
+        const seenIds = new Set();
+
+        // 1. Current session's scan result (if any)
+        if (scanResult) {
+            const current = scanResultToStudent(scanResult);
+            students.push(current);
+            if (scanResult.id) seenIds.add(scanResult.id);
+        }
+
+        // 2. All stored traces (skip duplicates)
+        for (let i = 0; i < storedTraces.length; i++) {
+            const trace = storedTraces[i];
+            if (seenIds.has(trace.id)) continue;
+            seenIds.add(trace.id);
+            students.push(traceToStudent(trace, students.length));
+        }
+
+        return students;
+    })();
+
+    const avgScore = displayStudents.length > 0
+        ? Math.round(displayStudents.reduce((a, s) => a + s.score, 0) / displayStudents.length)
+        : 0;
     const errorCount = displayStudents.filter(s => s.errorType).length;
 
     const handleFlag = async (student) => {
@@ -111,6 +151,22 @@ export default function ResultsDashboard() {
             notes: 'Teacher flagged as incorrect',
         });
         setCorrections(prev => ({ ...prev, [student.id]: true }));
+    };
+
+    const handleClearAll = async () => {
+        const { clearAllTraces } = await import('../lib/storageLayer');
+        clearAllTraces();
+        setStoredTraces([]);
+    };
+
+    // Format relative time
+    const timeAgo = (timestamp) => {
+        if (!timestamp) return '';
+        const diff = Date.now() - new Date(timestamp).getTime();
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        return `${Math.floor(diff / 86400000)}d ago`;
     };
 
 
@@ -141,47 +197,107 @@ export default function ResultsDashboard() {
                         >
                             <ArrowLeft size={18} color="var(--text-secondary)" />
                         </button>
-                        <div>
-                            <h1 className="text-heading">{data.subject || 'Physics'} Results</h1>
+                        <div style={{ flex: 1 }}>
+                            <h1 className="text-heading">{data.subject || 'Analysis'} Results</h1>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                                Scanned just now · {STUDENTS.length} students
+                                {displayStudents.length === 0
+                                    ? 'No scans yet'
+                                    : `${displayStudents.length} scan${displayStudents.length !== 1 ? 's' : ''}`
+                                }
                             </p>
                         </div>
+                        {displayStudents.length > 0 && (
+                            <button
+                                onClick={handleClearAll}
+                                title="Clear scan history"
+                                style={{
+                                    width: 36, height: 36, borderRadius: '50%', background: 'rgba(239,68,68,0.1)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer',
+                                }}
+                            >
+                                <Trash2 size={14} color="var(--grade-f)" />
+                            </button>
+                        )}
                     </div>
 
-                    {/* Stats */}
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                        <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <BarChart3 size={18} color="var(--lymbic-purple-light)" />
-                            <div>
-                                <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{avgScore}%</p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Avg Score</p>
+                    {/* Stats — only show when there's data */}
+                    {displayStudents.length > 0 && (
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <BarChart3 size={18} color="var(--lymbic-purple-light)" />
+                                <div>
+                                    <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{avgScore}%</p>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Avg Score</p>
+                                </div>
+                            </div>
+                            <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <Users size={18} color="var(--logic-green)" />
+                                <div>
+                                    <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{displayStudents.length}</p>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Scans</p>
+                                </div>
+                            </div>
+                            <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <AlertTriangle size={18} color="var(--grade-c)" />
+                                <div>
+                                    <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{errorCount}</p>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Errors Found</p>
+                                </div>
                             </div>
                         </div>
-                        <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <Users size={18} color="var(--logic-green)" />
-                            <div>
-                                <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{STUDENTS.length}</p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Students</p>
-                            </div>
-                        </div>
-                        <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <AlertTriangle size={18} color="var(--grade-c)" />
-                            <div>
-                                <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{errorCount}</p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Errors Found</p>
-                            </div>
-                        </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
-            {/* Student List */}
+            {/* ─── EMPTY STATE ─── */}
+            {!isLoading && displayStudents.length === 0 && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{
+                        maxWidth: 400, margin: '60px auto', padding: '0 20px',
+                        textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px',
+                    }}
+                >
+                    <div style={{
+                        width: 80, height: 80, borderRadius: 24,
+                        background: 'rgba(139, 92, 246, 0.1)',
+                        border: '1px solid rgba(139, 92, 246, 0.2)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                        <Camera size={36} color="var(--lymbic-purple)" />
+                    </div>
+                    <div>
+                        <h2 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '8px' }}>No Scans Yet</h2>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                            Scan a student worksheet to see real analysis results here — logic traces, error detection, and personalized feedback.
+                        </p>
+                    </div>
+                    <motion.button
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => navigate('/scan')}
+                        className="btn-primary"
+                        style={{ padding: '14px 32px', fontSize: '1rem', gap: '8px' }}
+                    >
+                        <Camera size={20} /> Scan Your First Page
+                    </motion.button>
+                </motion.div>
+            )}
+
+            {/* ─── LOADING STATE ─── */}
+            {isLoading && (
+                <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
+                    Loading scan history...
+                </div>
+            )}
+
+            {/* ─── STUDENT LIST ─── */}
             <div style={{
                 maxWidth: 560, width: '100%', margin: '0 auto', padding: '0 20px 32px',
                 display: 'flex', flexDirection: 'column', gap: '8px',
             }}>
-                {STUDENTS.map((student, i) => (
+                {displayStudents.map((student, i) => (
                     <motion.div
                         key={student.id}
                         initial={{ opacity: 0, y: 20 }}
@@ -194,23 +310,56 @@ export default function ResultsDashboard() {
                             style={{
                                 width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px',
                                 cursor: 'pointer',
-                                border: expandedId === student.id ? '1px solid var(--lymbic-purple)' : '1px solid var(--surface-glass-border)',
+                                border: student.isCurrent
+                                    ? '1px solid var(--lymbic-purple)'
+                                    : expandedId === student.id
+                                        ? '1px solid var(--lymbic-purple)'
+                                        : '1px solid var(--surface-glass-border)',
                                 transition: 'all 0.2s ease',
                             }}
                         >
                             <div style={{
                                 width: 44, height: 44, borderRadius: 12, background: `${student.gradeColor}15`,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                position: 'relative',
                             }}>
                                 <span style={{ color: student.gradeColor, fontWeight: 800, fontSize: '1rem' }}>
                                     {student.grade}
                                 </span>
+                                {student.isCurrent && (
+                                    <div style={{
+                                        position: 'absolute', top: -4, right: -4,
+                                        width: 12, height: 12, borderRadius: '50%',
+                                        background: 'var(--lymbic-purple)',
+                                        border: '2px solid var(--surface-base)',
+                                    }} />
+                                )}
                             </div>
                             <div style={{ flex: 1, textAlign: 'left' }}>
-                                <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>Student #{student.id}</p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                                    {student.errorType || 'No errors detected'}
-                                </p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                                        {student.isCurrent ? 'Current Scan' : `Scan #${student.displayIndex}`}
+                                    </p>
+                                    {student.isCurrent && (
+                                        <span style={{
+                                            fontSize: '0.6rem', fontWeight: 700, padding: '2px 6px',
+                                            background: 'var(--lymbic-purple)', color: 'white',
+                                            borderRadius: 6, textTransform: 'uppercase',
+                                        }}>
+                                            NEW
+                                        </span>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                        {student.errorType || 'No errors detected'}
+                                    </p>
+                                    {student.timestamp && (
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', opacity: 0.6 }}>
+                                            · {timeAgo(student.timestamp)}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ color: student.gradeColor, fontWeight: 700, fontSize: '1rem' }}>
@@ -237,52 +386,52 @@ export default function ResultsDashboard() {
                                         borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', borderTop: 'none',
                                         display: 'flex', flexDirection: 'column', gap: '16px',
                                     }}>
-                                        {/* Logic Trace */}
-                                        <div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                                                <Brain size={14} color="var(--lymbic-purple-light)" />
-                                                <span className="text-caption" style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>LOGIC TRACE</span>
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                {student.logicTrace.steps.map((step, si) => {
-                                                    const isDivergence = student.logicTrace.divergence !== null && si >= student.logicTrace.divergence;
-                                                    return (
-                                                        <div key={si} style={{
-                                                            display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px',
-                                                            borderRadius: '6px',
-                                                            background: isDivergence ? 'rgba(239, 68, 68, 0.08)' : 'rgba(52, 211, 153, 0.06)',
-                                                            border: `1px solid ${isDivergence ? 'rgba(239, 68, 68, 0.2)' : 'rgba(52, 211, 153, 0.15)'}`,
-                                                        }}>
-                                                            {isDivergence
-                                                                ? <AlertTriangle size={12} color="var(--grade-f)" />
-                                                                : <CheckCircle2 size={12} color="var(--logic-green)" />
-                                                            }
-                                                            <span style={{
-                                                                fontSize: '0.78rem',
-                                                                color: isDivergence ? 'var(--grade-f)' : 'var(--text-secondary)',
-                                                            }}>
-                                                                Step {si + 1}: {step}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Scratchpad Note */}
-                                        {student.scratchNote && (
+                                        {/* Confidence Badge */}
+                                        {student.confidence != null && (
                                             <div style={{
-                                                padding: '10px 12px', background: 'rgba(52, 211, 153, 0.06)',
-                                                borderRadius: '8px', border: '1px solid rgba(52, 211, 153, 0.15)',
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                padding: '8px 12px', borderRadius: '8px',
+                                                background: student.confidence >= 0.8 ? 'rgba(52, 211, 153, 0.06)' : 'rgba(251, 191, 36, 0.06)',
+                                                border: `1px solid ${student.confidence >= 0.8 ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)'}`,
                                             }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                                                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--logic-green)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                        📝 Scratchpad Insight
-                                                    </span>
+                                                <BarChart3 size={12} color={student.confidence >= 0.8 ? 'var(--logic-green)' : '#fbbf24'} />
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                    Confidence: {Math.round(student.confidence * 100)}%
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {/* Logic Trace */}
+                                        {student.logicTrace.steps.length > 0 && (
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                                                    <Brain size={14} color="var(--lymbic-purple-light)" />
+                                                    <span className="text-caption" style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>LOGIC TRACE</span>
                                                 </div>
-                                                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                                                    {student.scratchNote}
-                                                </p>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                    {student.logicTrace.steps.map((step, si) => {
+                                                        const isDivergence = student.logicTrace.divergence !== null && si >= student.logicTrace.divergence;
+                                                        return (
+                                                            <div key={si} style={{
+                                                                display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px',
+                                                                borderRadius: '6px',
+                                                                background: isDivergence ? 'rgba(239, 68, 68, 0.08)' : 'rgba(52, 211, 153, 0.06)',
+                                                                border: `1px solid ${isDivergence ? 'rgba(239, 68, 68, 0.2)' : 'rgba(52, 211, 153, 0.15)'}`,
+                                                            }}>
+                                                                {isDivergence
+                                                                    ? <AlertTriangle size={12} color="var(--grade-f)" />
+                                                                    : <CheckCircle2 size={12} color="var(--logic-green)" />
+                                                                }
+                                                                <span style={{
+                                                                    fontSize: '0.78rem',
+                                                                    color: isDivergence ? 'var(--grade-f)' : 'var(--text-secondary)',
+                                                                }}>
+                                                                    Step {si + 1}: {step}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         )}
 
@@ -296,6 +445,30 @@ export default function ResultsDashboard() {
                                                 {student.feedback}
                                             </div>
                                         </div>
+
+                                        {/* Flag Button */}
+                                        {student.traceId && !corrections[student.id] && (
+                                            <motion.button
+                                                whileTap={{ scale: 0.97 }}
+                                                onClick={() => handleFlag(student)}
+                                                style={{
+                                                    padding: '8px 14px', fontSize: '0.75rem',
+                                                    background: 'rgba(239, 68, 68, 0.06)',
+                                                    border: '1px solid rgba(239, 68, 68, 0.15)',
+                                                    borderRadius: '8px', color: 'var(--grade-f)',
+                                                    cursor: 'pointer', fontWeight: 600,
+                                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                                    alignSelf: 'flex-start',
+                                                }}
+                                            >
+                                                <AlertTriangle size={12} /> Flag as Incorrect
+                                            </motion.button>
+                                        )}
+                                        {corrections[student.id] && (
+                                            <p style={{ color: 'var(--logic-green)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <CheckCircle2 size={12} /> Flagged for review
+                                            </p>
+                                        )}
                                     </div>
                                 </motion.div>
                             )}

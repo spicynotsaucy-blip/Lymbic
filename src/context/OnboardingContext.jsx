@@ -11,15 +11,31 @@ export function OnboardingProvider({ children }) {
         studentCount: 30,
     });
 
-    // Holds the real pipeline result after a scan
+    // Holds the real pipeline result after a scan (single-scan flow)
     const [scanResult, setScanResult] = useState(null);
+
+    // Holds multiple scan results from batch mode
+    const [scanHistory, setScanHistory] = useState([]);
 
     const updateData = (updates) => {
         setData(prev => ({ ...prev, ...updates }));
     };
 
+    const addScanResult = (result) => {
+        setScanHistory(prev => [result, ...prev]);
+    };
+
+    const clearScanHistory = () => {
+        setScanHistory([]);
+        setScanResult(null);
+    };
+
     return (
-        <OnboardingContext.Provider value={{ data, updateData, scanResult, setScanResult }}>
+        <OnboardingContext.Provider value={{
+            data, updateData,
+            scanResult, setScanResult,
+            scanHistory, addScanResult, clearScanHistory,
+        }}>
             {children}
         </OnboardingContext.Provider>
     );

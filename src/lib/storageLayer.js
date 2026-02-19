@@ -128,3 +128,27 @@ export async function submitCorrection(traceId, correction) {
 export function getLocalTraces() {
     return JSON.parse(localStorage.getItem('lymbic_traces') || '[]');
 }
+
+/**
+ * Get all traces sorted by created_at descending (most recent first).
+ */
+export function getAllTraces() {
+    const traces = getLocalTraces();
+    return traces.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+/**
+ * Get traces for a specific session ID.
+ */
+export function getSessionTraces(sessionId) {
+    return getLocalTraces().filter(t => t.session_id === sessionId);
+}
+
+/**
+ * Clear all stored traces (for testing/reset).
+ */
+export function clearAllTraces() {
+    localStorage.removeItem('lymbic_traces');
+    localStorage.removeItem('lymbic_errors');
+    localStorage.removeItem('lymbic_corrections');
+}
