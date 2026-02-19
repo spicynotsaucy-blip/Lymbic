@@ -2,9 +2,10 @@
  * AdaptiveButton — A button that ripples and responds to emotional state
  * @module AdaptiveButton
  */
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAdaptiveUI } from '../hooks/useAdaptiveUI';
+import { predictiveInteraction } from '../lib/predictiveInteraction';
 
 export default function AdaptiveButton({
     children,
@@ -18,6 +19,23 @@ export default function AdaptiveButton({
 }) {
     const { motion: motionPresets, expression, canUseParticles, shouldReduceMotion } = useAdaptiveUI();
     const btnRef = useRef(null);
+    const [isPredicting, setIsPredicting] = useState(false);
+
+    useEffect(() => {
+        if (!btnRef.current || disabled) return;
+
+        const id = `btn-${Math.random().toString(36).substr(2, 9)}`;
+        const unregister = predictiveInteraction.track(id, btnRef.current, {
+            onPreAnimate: () => {
+                if (!disabled) setIsPredicting(true);
+            }
+        });
+
+        return () => unregister();
+    }, [disabled]);
+
+    // Reset prediction state on hover/leave
+    const handleHoverEnd = () => setIsPredicting(false);
 
     // Dynamic styles based on variant and emotion
     const getVariantStyles = () => {
@@ -66,13 +84,23 @@ export default function AdaptiveButton({
         };
     };
 
+    const hoverAnim = disabled ? {} : {
+        ...motionPresets.buttonHover,
+        scale: isPredicting ? 1.05 : motionPresets.buttonHover.scale || 1.02
+    };
+
     return (
         <motion.button
             ref={btnRef}
             className={`adaptive-btn ${className}`}
             style={getVariantStyles()}
-            whileHover={!disabled ? motionPresets.buttonHover : {}}
+            whileHover={hoverAnim}
             whileTap={!disabled ? motionPresets.buttonPress : {}}
+            onHoverEnd={handleHoverEnd}
+            animate={isPredicting ? {
+                scale: 1.02,
+                boxShadow: `0 0 15px hsla(${expression.primaryHue}, 80%, 60%, 0.3)`
+            } : {}}
             onClick={onClick}
             disabled={disabled}
             data-testid={testId}
