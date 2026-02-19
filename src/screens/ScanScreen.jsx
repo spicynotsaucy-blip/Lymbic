@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboarding } from '../context/OnboardingContext';
 import ScanAnimation from '../components/ScanAnimation';
-import { Camera, X, ShieldAlert, RefreshCw, FlipHorizontal, Lightbulb, Loader2 } from 'lucide-react';
+import { Camera, X, ShieldAlert, RefreshCw, FlipHorizontal, Lightbulb, Loader2, ArrowRight, Check } from 'lucide-react';
 import { normalizeAndStore } from '../lib/storageLayer';
 import useSmartScanner from '../hooks/useSmartScanner';
 import DocumentOverlay from '../components/DocumentOverlay';
@@ -22,7 +22,12 @@ export default function ScanScreen() {
     const [facingMode, setFacingMode] = useState('environment');
     const [qualityIssue, setQualityIssue] = useState(null); // { reason, suggestion }
     const [analyzeStatus, setAnalyzeStatus] = useState(''); // progress message
-    const sessionIdRef = useRef(`session_${Date.now()}`);
+    const sessionIdRef = useRef(`session_${Date.now()} `);
+
+    // Batch mode state
+    const [isBatchMode, setIsBatchMode] = useState(false);
+    const [scannedCount, setScannedCount] = useState(0);
+    const [showSavedToast, setShowSavedToast] = useState(false);
 
     // Adaptive intelligence pipeline — detection + quality + analysis
     const scanner = useSmartScanner(videoRef, { autoCapture: false, analysisMode: 'full' });
@@ -144,8 +149,24 @@ export default function ScanScreen() {
                     sessionIdRef.current
                 );
 
-                setScanResult(stored.success ? stored.result : result.result);
-                setPhase('complete');
+                if (isBatchMode) {
+                    // Batch mode: Stay on screen, show toast, reset
+                    setScannedCount(prev => prev + 1);
+                    setShowSavedToast(true);
+                    setTimeout(() => setShowSavedToast(false), 2000);
+
+                    // Reset for next scan
+                    setPhase('preview');
+                    setFreezeFrame(null);
+                    setAnalyzeStatus('');
+                    scanner.nextPage(); // Clear active page in tracker
+
+                    if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+                } else {
+                    // Single mode: Navigate immediately
+                    setScanResult(stored.success ? stored.result : result.result);
+                    setPhase('complete');
+                }
             } else if (result?.reason === 'quality') {
                 setQualityIssue({
                     reason: 'Low image quality',
@@ -154,16 +175,33 @@ export default function ScanScreen() {
                 setPhase('quality_fail');
             } else if (result?.reason === 'duplicate') {
                 setAnalyzeStatus('Duplicate detected — try a different page');
-                setPhase('preview');
+                setTimeout(() => {
+                    setPhase('preview');
+                    setFreezeFrame(null);
+                }, 1500);
             } else {
                 setScanResult(null);
                 setPhase('complete');
             }
         } catch (err) {
             console.error('[Lymbic] Pipeline error:', err);
-            setScanResult(null);
-            setPhase('complete');
+            // Even on error in batch mode, we probably want to let them continue
+            if (isBatchMode) {
+                setAnalyzeStatus('Error saving scan');
+                setTimeout(() => {
+                    setPhase('preview');
+                    setFreezeFrame(null);
+                }, 1500);
+            } else {
+                setScanResult(null);
+                setPhase('complete');
+            }
         }
+    };
+
+    const finishBatch = () => {
+        stopCamera();
+        navigate('/results'); // In real app, this might go to a "Batch Summary" screen
     };
 
     const handleRetry = () => {
@@ -369,103 +407,55 @@ export default function ScanScreen() {
                 )}
             </AnimatePresence>
 
-            {/* ─── QUALITY FAIL STATE ─── */}
-            <AnimatePresence>
-                {phase === 'quality_fail' && (
-                    <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', zIndex: 50, padding: '24px' }}
-                    >
-                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="glass-card-elevated"
-                            style={{ maxWidth: 360, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '20px', padding: '32px' }}
-                        >
-                            <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(251,191,36,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', border: '1px solid rgba(251,191,36,0.3)' }}>
-                                <Lightbulb size={28} color="#fbbf24" />
-                            </div>
-                            <div>
-                                <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '8px' }}>Image Quality Too Low</p>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
-                                    {qualityIssue?.suggestion || 'Please adjust the lighting and try again.'}
-                                </p>
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <button className="btn-secondary" style={{ flex: 1, padding: '12px' }} onClick={() => navigate('/grade')}>Cancel</button>
-                                <motion.button className="btn-primary" style={{ flex: 1, padding: '12px', gap: '6px' }} whileTap={{ scale: 0.97 }} onClick={handleRetryCapture}>
-                                    <RefreshCw size={16} /> Try Again
-                                </motion.button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* ─── ANALYZING STATE ─── */}
-            <AnimatePresence>
-                {phase === 'analyzing' && (
-                    <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.92)', zIndex: 50, padding: '24px' }}
-                    >
-                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
-                            style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}
-                        >
-                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                                style={{ width: 56, height: 56, borderRadius: '50%', border: '3px solid rgba(139,92,246,0.2)', borderTop: '3px solid var(--lymbic-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                                <Loader2 size={24} color="var(--lymbic-purple)" />
-                            </motion.div>
-                            <div>
-                                <p style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '6px' }}>Lymbic is thinking…</p>
-                                <motion.p key={analyzeStatus} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                                    style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}
-                                >
-                                    {analyzeStatus || 'Initializing analysis…'}
-                                </motion.p>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
             {/* ─── TOP BAR ─── */}
-            {phase !== 'requesting' && phase !== 'denied' && (
-                <div style={{
-                    position: 'absolute', top: 0, left: 0, right: 0, padding: '16px 20px',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10,
-                    background: 'linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%)',
-                }}>
-                    <span style={{ color: 'white', fontWeight: 600, fontSize: '0.95rem' }}>
-                        {data.subject || 'Physics'} — Scan
-                    </span>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        {phase === 'preview' && cameraReady && (
-                            <motion.button
-                                whileTap={{ scale: 0.9, rotate: 180 }}
-                                transition={{ duration: 0.3 }}
-                                onClick={handleFlipCamera}
-                                title="Flip camera"
+            <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, padding: '20px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 20,
+                background: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 100%)',
+            }}>
+                <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => navigate('/')}
+                    style={{ padding: 8, background: 'rgba(255,255,255,0.2)', borderRadius: '50%', backdropFilter: 'blur(10px)', border: 'none', color: 'white', cursor: 'pointer' }}
+                >
+                    <X size={24} />
+                </motion.button>
+
+                {/* Batch Mode Toggle */}
+                {phase !== 'requesting' && (
+                    <div
+                        onClick={() => setIsBatchMode(!isBatchMode)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: 20,
+                            backdropFilter: 'blur(10px)', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)'
+                        }}
+                    >
+                        <span style={{ color: 'white', fontSize: '0.8rem', fontWeight: 500 }}>Batch Mode</span>
+                        <div style={{
+                            width: 36, height: 20, borderRadius: 10,
+                            background: isBatchMode ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                            position: 'relative', transition: 'background 0.2s'
+                        }}>
+                            <motion.div
+                                animate={{ x: isBatchMode ? 18 : 2 }}
                                 style={{
-                                    width: 36, height: 36, borderRadius: '50%',
-                                    background: 'rgba(255,255,255,0.15)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 16, height: 16, borderRadius: '50%', background: 'white',
+                                    position: 'absolute', top: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
                                 }}
-                            >
-                                <FlipHorizontal size={18} color="white" />
-                            </motion.button>
-                        )}
-                        <button
-                            onClick={() => { stopCamera(); navigate('/grade'); }}
-                            style={{
-                                width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}
-                        >
-                            <X size={18} color="white" />
-                        </button>
+                            />
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+
+                <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleFlipCamera}
+                    style={{ padding: 8, background: 'rgba(255,255,255,0.2)', borderRadius: '50%', backdropFilter: 'blur(10px)', border: 'none', color: 'white', cursor: 'pointer' }}
+                >
+                    <FlipHorizontal size={24} />
+                </motion.button>
+            </div>
 
             {/* ─── LIVE CAMERA FEED ─── */}
             <div style={{
@@ -567,6 +557,18 @@ export default function ScanScreen() {
                 position: 'absolute', bottom: 80, left: 0, right: 0, textAlign: 'center', zIndex: 10,
             }}>
                 <AnimatePresence mode="wait">
+                    {phase === 'preview' && scanner.guidance && !scanner.guidance.isReady && (
+                        <motion.p key="guidance" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.85rem', fontWeight: 500 }}>
+                            {scanner.guidance.primary.message}
+                        </motion.p>
+                    )}
+                    {phase === 'preview' && scanner.isReadyToCapture && (
+                        <motion.p key="ready" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            style={{ color: '#22c55e', fontSize: '0.85rem', fontWeight: 600 }}>
+                            ✓ Ready to capture
+                        </motion.p>
+                    )}
                     {phase === 'scanning' && (
                         <motion.p key="scanning" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                             style={{ color: 'var(--lymbic-purple-light)', fontSize: '0.85rem', fontWeight: 500 }}>
@@ -590,35 +592,102 @@ export default function ScanScreen() {
                     transition={{ delay: 0.3 }}
                     style={{
                         position: 'absolute', bottom: 0, left: 0, right: 0, padding: '24px',
-                        display: 'flex', justifyContent: 'center',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
                         background: 'linear-gradient(0deg, rgba(0,0,0,0.8) 0%, transparent 100%)',
                     }}
                 >
-                    <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={handleCaptureScan}
-                        style={{
-                            width: 72, height: 72, borderRadius: '50%',
-                            background: scanner.isReadyToCapture ? '#22c55e' : 'white',
-                            border: `4px solid ${scanner.isReadyToCapture ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.3)'}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                            boxShadow: scanner.isReadyToCapture
-                                ? '0 0 24px rgba(34,197,94,0.4)'
-                                : '0 0 24px rgba(255,255,255,0.2)',
-                            transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease',
-                        }}
-                    >
-                        <div style={{
-                            width: 56, height: 56, borderRadius: '50%',
-                            background: 'linear-gradient(135deg, var(--lymbic-purple), var(--lymbic-purple-deep))',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            <Camera size={28} color="white" />
-                        </div>
-                    </motion.button>
+                    {/* Stability progress ring */}
+                    <div style={{ position: 'relative', width: 84, height: 84 }}>
+                        <svg width="84" height="84" style={{ position: 'absolute', top: 0, left: 0, transform: 'rotate(-90deg)' }}>
+                            <circle cx="42" cy="42" r="38" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
+                            <circle
+                                cx="42" cy="42" r="38" fill="none"
+                                stroke={scanner.isReadyToCapture ? '#22c55e' : 'rgba(139,92,246,0.6)'}
+                                strokeWidth="3"
+                                strokeDasharray={`${2 * Math.PI * 38} `}
+                                strokeDashoffset={`${2 * Math.PI * 38 * (1 - scanner.stabilityProgress)} `}
+                                strokeLinecap="round"
+                                style={{ transition: 'stroke-dashoffset 0.2s ease, stroke 0.3s ease' }}
+                            />
+                        </svg>
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={scanner.isReadyToCapture ? { scale: 0.9 } : {}}
+                            onClick={handleCaptureScan}
+                            disabled={!scanner.isReadyToCapture}
+                            aria-label={scanner.isReadyToCapture ? 'Capture document' : 'Align document to capture'}
+                            style={{
+                                position: 'absolute', top: 6, left: 6,
+                                width: 72, height: 72, borderRadius: '50%',
+                                background: scanner.isReadyToCapture ? '#22c55e' : 'white',
+                                border: `4px solid ${scanner.isReadyToCapture ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.3)'} `,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: scanner.isReadyToCapture ? 'pointer' : 'not-allowed',
+                                opacity: scanner.isReadyToCapture ? 1 : 0.6,
+                                boxShadow: scanner.isReadyToCapture
+                                    ? '0 0 24px rgba(34,197,94,0.4)'
+                                    : '0 0 24px rgba(255,255,255,0.2)',
+                                transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease',
+                            }}
+                        >
+                            <div style={{
+                                width: 56, height: 56, borderRadius: '50%',
+                                background: 'linear-gradient(135deg, var(--lymbic-purple), var(--lymbic-purple-deep))',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>
+                                <Camera size={28} color="white" />
+                            </div>
+                        </motion.button>
+                    </div>
                 </motion.div>
             )}
+
+            {/* ─── BATCH MODE FAB ─── */}
+            <AnimatePresence>
+                {isBatchMode && scannedCount > 0 && phase !== 'scanning' && (
+                    <motion.button
+                        initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, y: 20 }}
+                        onClick={finishBatch}
+                        style={{
+                            position: 'absolute', bottom: 120, right: 30, zIndex: 30,
+                            background: 'var(--lymbic-purple)', color: 'white',
+                            border: 'none', borderRadius: 30, padding: '12px 24px',
+                            fontWeight: 600, boxShadow: '0 4px 12px rgba(139, 92, 246, 0.4)',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8
+                        }}
+                    >
+                        <span>Finish Batch ({scannedCount})</span>
+                        <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: '50%', padding: 4 }}>
+                            <ArrowRight size={16} />
+                        </div>
+                    </motion.button>
+                )}
+            </AnimatePresence>
+
+            {/* ─── SAVED TOAST ─── */}
+            <AnimatePresence>
+                {showSavedToast && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        style={{
+                            position: 'absolute', top: 100, left: '50%', transform: 'translateX(-50%)',
+                            background: 'rgba(34, 197, 94, 0.9)', color: 'white',
+                            padding: '8px 16px', borderRadius: 20, zIndex: 40,
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            backdropFilter: 'blur(4px)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                        }}
+                    >
+                        <div style={{ background: 'white', borderRadius: '50%', padding: 2 }}>
+                            <Check size={12} color="#22c55e" />
+                        </div>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Scan Saved</span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 }

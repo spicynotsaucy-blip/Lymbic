@@ -1,15 +1,21 @@
 // ═══════════════════════════════════════════════════════════
 //  LAYER 2: ANALYSIS ENGINE — Multi-Pass Gemini w/ Adaptive Intelligence
+//  + Defense-in-Depth Validation Pipeline (Phase 10)
 // ═══════════════════════════════════════════════════════════
 
 import { AdaptivePromptEngine } from '../utils/AdaptivePromptEngine';
 import { ConfidenceCalibrator } from '../utils/ConfidenceCalibrator';
+import { PreFlightCheck } from '../utils/PreFlightCheck';
+import { SmartMock } from '../utils/SmartMock';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const USE_MOCK = import.meta.env.VITE_MOCK_API === 'true';
 
 const promptEngine = new AdaptivePromptEngine();
 const calibrator = new ConfidenceCalibrator();
+const preFlightCheck = new PreFlightCheck();
+const smartMock = new SmartMock();
 
 // ─── Mock data for dev / no-API fallback ───────────────────
 const MOCK_RESULT = {
@@ -139,11 +145,21 @@ Respond with JSON:
 export async function analyzeWithLogicEngine(imageBase64, problemContext = {}, options = {}) {
     const { mode = 'full', imageQuality = null, previousPages = [], rubric = null, feedbackStyle } = options;
 
-    // No API key → mock
-    if (!GEMINI_API_KEY) {
+    // No API key AND not using smart mock → static fallback
+    if (!GEMINI_API_KEY && !USE_MOCK) {
         console.warn('[Lymbic] No VITE_GEMINI_API_KEY — using mock analysis');
         await new Promise(r => setTimeout(r, 2200));
         return { ...MOCK_RESULT, _mock: true, timestamp: Date.now() };
+    }
+
+    // Smart mock mode — quality-aware probabilistic responses
+    if (USE_MOCK && !GEMINI_API_KEY) {
+        console.log('[Lymbic] Smart mock mode');
+        const mockResult = await smartMock.analyze({ image: imageBase64 });
+        if (!mockResult.success) {
+            return { ...MOCK_RESULT, _mock: true, _smartMockError: mockResult.error, timestamp: Date.now() };
+        }
+        return { ...MOCK_RESULT, ...mockResult.analysis, _mock: true, _smartMock: true, timestamp: Date.now() };
     }
 
     try {
@@ -295,6 +311,141 @@ Return ONLY valid JSON:
 }
 
 // ═══════════════════════════════════════════════════════════
+//  DEFENSE-IN-DEPTH: 6-Gate Pipeline (Phase 10)
+// ═══════════════════════════════════════════════════════════
+
+const _generatePipelineId = () => `PL-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`;
+
+const _createPipelineError = (code, message, details = {}) => ({
+    success: false,
+    error: { code, message, timestamp: Date.now(), ...details },
+    analysis: null,
+});
+
+const _validateResult = (result) => {
+    const issues = [];
+    if (!result) issues.push('Result is null');
+    else {
+        if (!result.score && result.score !== 0 && !result.logicTrace) issues.push('Missing core fields');
+        if (result.confidence === 1.0) issues.push('Suspiciously perfect confidence');
+    }
+    return { valid: issues.length === 0, issues };
+};
+
+/**
+ * Run the full defense-in-depth analysis pipeline.
+ * 6 gates: null → geometry → pre-flight → content → analysis → result validation.
+ *
+ * @param {object} capture         — { image, quad, timestamp, readinessScore }
+ * @param {object} readinessState  — from ReadinessEngine.assess()
+ * @param {object} [options]       — { subject, mode, ... }
+ * @returns {Promise<object>}
+ */
+export async function runAnalysisPipeline(capture, readinessState, options = {}) {
+    const pid = _generatePipelineId();
+    const t0 = Date.now();
+    console.log(`[Pipeline ${pid}] Starting`);
+
+    // ── GATE 1: Null / empty ───────────────────────────────
+    if (!capture) {
+        console.error(`[Pipeline ${pid}] ABORT: No capture data`);
+        return _createPipelineError('NULL_CAPTURE', 'No capture data provided');
+    }
+
+    // ── GATE 2: Geometry validation ────────────────────────
+    if (!capture.quad || !Array.isArray(capture.quad) || capture.quad.length !== 4) {
+        console.error(`[Pipeline ${pid}] ABORT: Invalid geometry`);
+        return _createPipelineError('INVALID_GEOMETRY', 'No valid document geometry. Position a document in frame.');
+    }
+    for (let i = 0; i < 4; i++) {
+        const p = capture.quad[i];
+        if (!p || typeof p.x !== 'number' || typeof p.y !== 'number' || isNaN(p.x) || isNaN(p.y)) {
+            console.error(`[Pipeline ${pid}] ABORT: Corrupt geometry at point ${i}`);
+            return _createPipelineError('CORRUPT_GEOMETRY', 'Document detection data is corrupt. Try again.');
+        }
+    }
+
+    // ── GATE 3: Pre-flight check ──────────────────────────
+    console.log(`[Pipeline ${pid}] Pre-flight checks…`);
+    const pfResult = await preFlightCheck.run(capture, readinessState);
+    if (!pfResult.passed) {
+        const primary = pfResult.failures[0];
+        console.error(`[Pipeline ${pid}] ABORT: Pre-flight failed`, primary);
+        return _createPipelineError('PREFLIGHT_FAILED', primary.reason || 'Pre-flight checks failed', { preFlightResult: pfResult });
+    }
+    if (pfResult.warnings.length > 0) {
+        console.warn(`[Pipeline ${pid}] Pre-flight warnings:`, pfResult.warnings.map(w => w.reason));
+    }
+
+    // ── GATE 4: Content validation ─────────────────────────
+    if (readinessState?.factors?.edgeDensity !== undefined && readinessState.factors.edgeDensity < 0.05) {
+        console.error(`[Pipeline ${pid}] ABORT: No content detected`);
+        return _createPipelineError('NO_CONTENT', 'Captured image appears blank or has no readable content.');
+    }
+
+    // ── GATE 5: Execute analysis ──────────────────────────
+    console.log(`[Pipeline ${pid}] All gates passed. Executing analysis…`);
+    let analysisResult;
+    try {
+        if (USE_MOCK && !GEMINI_API_KEY) {
+            analysisResult = await smartMock.analyze({ ...capture, readiness: readinessState });
+        } else {
+            try {
+                // Try real analysis
+                const realResult = await analyzeWithLogicEngine(capture.image, options, { imageQuality: readinessState?.factors?.qualityEstimate });
+
+                // If real analysis returned a mock result (e.g. key missing/invalid), respect it
+                if (realResult._mock) {
+                    analysisResult = { success: true, analysis: realResult };
+                } else {
+                    analysisResult = { success: true, analysis: realResult };
+                }
+            } catch (networkErr) {
+                // Network/API failure → Fallback to SmartMock estimate
+                console.warn(`[Pipeline ${pid}] Network analysis failed, falling back to offline estimate:`, networkErr);
+                const offlineResult = await smartMock.analyze({ ...capture, readiness: readinessState });
+
+                analysisResult = {
+                    success: true,
+                    analysis: {
+                        ...offlineResult.analysis,
+                        _offlineEstimate: true,
+                        warnings: ['Network unavailable — result is an estimate based on image analysis']
+                    },
+                    warnings: ['Network unavailable — using offline estimate']
+                };
+            }
+        }
+    } catch (err) {
+        console.error(`[Pipeline ${pid}] Analysis execution fatally failed:`, err);
+        return _createPipelineError('ANALYSIS_ERROR', err.message);
+    }
+
+    // ── GATE 6: Result validation ─────────────────────────
+    const resultData = analysisResult.success ? (analysisResult.analysis || analysisResult) : null;
+    const validation = _validateResult(resultData);
+    if (!validation.valid && analysisResult.success) {
+        console.error(`[Pipeline ${pid}] ABORT: Invalid result`, validation);
+        return _createPipelineError('INVALID_RESULT', 'Analysis produced invalid results. Try again.', { validationIssues: validation.issues });
+    }
+
+    // ── SUCCESS ────────────────────────────────────────────
+    const duration = Date.now() - t0;
+    console.log(`[Pipeline ${pid}] Complete in ${duration}ms`);
+
+    return {
+        success: true,
+        pipelineId: pid,
+        duration,
+        preFlightResult: pfResult,
+        analysis: resultData,
+        result: resultData, // alias for backward compat
+        warnings: [...pfResult.warnings.map(w => w.reason), ...(analysisResult.warnings || [])],
+        meta: { usedMock: USE_MOCK, timestamp: Date.now(), readinessScore: readinessState?.score },
+    };
+}
+
+// ═══════════════════════════════════════════════════════════
 //  Exports for external use
 // ═══════════════════════════════════════════════════════════
-export { promptEngine, calibrator };
+export { promptEngine, calibrator, preFlightCheck, smartMock };
