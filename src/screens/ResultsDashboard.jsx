@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboarding } from '../context/OnboardingContext';
+import { useAdaptiveUI } from '../hooks/useAdaptiveUI'; // [NEW]
+import AdaptiveCard from '../components/AdaptiveCard';     // [NEW]
+import AdaptiveButton from '../components/AdaptiveButton'; // [NEW]
 import {
     ArrowLeft, ChevronDown, ChevronUp, Brain, MessageSquare,
     AlertTriangle, CheckCircle2, BarChart3, Users, Camera, Trash2, Clock,
@@ -99,6 +102,7 @@ function scanResultToStudent(scanResult) {
 export default function ResultsDashboard() {
     const navigate = useNavigate();
     const { data, scanResult } = useOnboarding();
+    const { setEmotion, motion: motionPresets } = useAdaptiveUI(); // [NEW] hook
     const [expandedId, setExpandedId] = useState(null);
     const [corrections, setCorrections] = useState({});
     const [storedTraces, setStoredTraces] = useState([]);
@@ -143,6 +147,20 @@ export default function ResultsDashboard() {
         : 0;
     const errorCount = displayStudents.filter(s => s.errorType).length;
 
+    // [NEW] Emotional Triggers
+    useEffect(() => {
+        if (isLoading) return;
+        if (displayStudents.length === 0) {
+            setEmotion('neutral');
+        } else if (avgScore >= 85) {
+            setEmotion('success');
+        } else if (avgScore < 70) {
+            setEmotion('encouragement');
+        } else {
+            setEmotion('learning');
+        }
+    }, [isLoading, displayStudents.length, avgScore, setEmotion]);
+
     const handleFlag = async (student) => {
         const { submitCorrection } = await import('../lib/storageLayer');
         await submitCorrection(student.traceId, {
@@ -151,12 +169,14 @@ export default function ResultsDashboard() {
             notes: 'Teacher flagged as incorrect',
         });
         setCorrections(prev => ({ ...prev, [student.id]: true }));
+        setEmotion('learning', { duration: 600 }); // Trigger learning mood on correction
     };
 
     const handleClearAll = async () => {
         const { clearAllTraces } = await import('../lib/storageLayer');
         clearAllTraces();
         setStoredTraces([]);
+        setEmotion('neutral'); // Reset mood
     };
 
     // Format relative time
@@ -188,17 +208,15 @@ export default function ResultsDashboard() {
             }}>
                 <div style={{ maxWidth: 560, margin: '0 auto' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                        <button
+                        <AdaptiveButton
+                            variant="ghost"
                             onClick={() => navigate('/grade')}
-                            style={{
-                                width: 36, height: 36, borderRadius: '50%', background: 'var(--surface-card)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}
+                            style={{ width: 36, height: 36, padding: 0, borderRadius: '50%' }}
                         >
                             <ArrowLeft size={18} color="var(--text-secondary)" />
-                        </button>
+                        </AdaptiveButton>
                         <div style={{ flex: 1 }}>
-                            <h1 className="text-heading">{data.subject || 'Analysis'} Results</h1>
+                            <h1 className="text-heading" style={{ color: 'var(--text-primary)' }}>{data.subject || 'Analysis'} Results</h1>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                                 {displayStudents.length === 0
                                     ? 'No scans yet'
@@ -207,44 +225,41 @@ export default function ResultsDashboard() {
                             </p>
                         </div>
                         {displayStudents.length > 0 && (
-                            <button
+                            <AdaptiveButton
+                                variant="ghost"
                                 onClick={handleClearAll}
                                 title="Clear scan history"
-                                style={{
-                                    width: 36, height: 36, borderRadius: '50%', background: 'rgba(239,68,68,0.1)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer',
-                                }}
+                                style={{ width: 36, height: 36, padding: 0, borderRadius: '50%', color: 'var(--grade-f)' }}
                             >
-                                <Trash2 size={14} color="var(--grade-f)" />
-                            </button>
+                                <Trash2 size={16} />
+                            </AdaptiveButton>
                         )}
                     </div>
 
                     {/* Stats — only show when there's data */}
                     {displayStudents.length > 0 && (
                         <div style={{ display: 'flex', gap: '10px' }}>
-                            <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <AdaptiveCard style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <BarChart3 size={18} color="var(--lymbic-purple-light)" />
                                 <div>
                                     <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{avgScore}%</p>
                                     <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Avg Score</p>
                                 </div>
-                            </div>
-                            <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            </AdaptiveCard>
+                            <AdaptiveCard style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <Users size={18} color="var(--logic-green)" />
                                 <div>
                                     <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{displayStudents.length}</p>
                                     <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Scans</p>
                                 </div>
-                            </div>
-                            <div className="glass-card" style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            </AdaptiveCard>
+                            <AdaptiveCard style={{ flex: 1, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <AlertTriangle size={18} color="var(--grade-c)" />
                                 <div>
                                     <p style={{ fontSize: '1.2rem', fontWeight: 700 }}>{errorCount}</p>
-                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Errors Found</p>
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Errors</p>
                                 </div>
-                            </div>
+                            </AdaptiveCard>
                         </div>
                     )}
                 </div>
@@ -274,14 +289,13 @@ export default function ResultsDashboard() {
                             Scan a student worksheet to see real analysis results here — logic traces, error detection, and personalized feedback.
                         </p>
                     </div>
-                    <motion.button
-                        whileTap={{ scale: 0.97 }}
+                    <AdaptiveButton
+                        variant="primary"
                         onClick={() => navigate('/scan')}
-                        className="btn-primary"
                         style={{ padding: '14px 32px', fontSize: '1rem', gap: '8px' }}
                     >
                         <Camera size={20} /> Scan Your First Page
-                    </motion.button>
+                    </AdaptiveButton>
                 </motion.div>
             )}
 
@@ -304,175 +318,173 @@ export default function ResultsDashboard() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.06, duration: 0.4 }}
                     >
-                        <button
+                        {/* Interactive adaptive card replacing the button */}
+                        <AdaptiveCard
                             onClick={() => setExpandedId(expandedId === student.id ? null : student.id)}
-                            className="glass-card"
                             style={{
-                                width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px',
-                                cursor: 'pointer',
+                                width: '100%', padding: '0',
                                 border: student.isCurrent
                                     ? '1px solid var(--lymbic-purple)'
                                     : expandedId === student.id
                                         ? '1px solid var(--lymbic-purple)'
-                                        : '1px solid var(--surface-glass-border)',
-                                transition: 'all 0.2s ease',
+                                        : undefined,
                             }}
                         >
-                            <div style={{
-                                width: 44, height: 44, borderRadius: 12, background: `${student.gradeColor}15`,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                                position: 'relative',
-                            }}>
-                                <span style={{ color: student.gradeColor, fontWeight: 800, fontSize: '1rem' }}>
-                                    {student.grade}
-                                </span>
-                                {student.isCurrent && (
-                                    <div style={{
-                                        position: 'absolute', top: -4, right: -4,
-                                        width: 12, height: 12, borderRadius: '50%',
-                                        background: 'var(--lymbic-purple)',
-                                        border: '2px solid var(--surface-base)',
-                                    }} />
-                                )}
-                            </div>
-                            <div style={{ flex: 1, textAlign: 'left' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                                        {student.isCurrent ? 'Current Scan' : `Scan #${student.displayIndex}`}
-                                    </p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 18px', width: '100%' }}>
+                                <div style={{
+                                    width: 44, height: 44, borderRadius: 12, background: `${student.gradeColor}15`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                    position: 'relative',
+                                }}>
+                                    <span style={{ color: student.gradeColor, fontWeight: 800, fontSize: '1rem' }}>
+                                        {student.grade}
+                                    </span>
                                     {student.isCurrent && (
-                                        <span style={{
-                                            fontSize: '0.6rem', fontWeight: 700, padding: '2px 6px',
-                                            background: 'var(--lymbic-purple)', color: 'white',
-                                            borderRadius: 6, textTransform: 'uppercase',
-                                        }}>
-                                            NEW
-                                        </span>
+                                        <div style={{
+                                            position: 'absolute', top: -4, right: -4,
+                                            width: 12, height: 12, borderRadius: '50%',
+                                            background: 'var(--lymbic-purple)',
+                                            border: '2px solid var(--surface-base)',
+                                        }} />
                                     )}
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                                        {student.errorType || 'No errors detected'}
-                                    </p>
-                                    {student.timestamp && (
-                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', opacity: 0.6 }}>
-                                            · {timeAgo(student.timestamp)}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ color: student.gradeColor, fontWeight: 700, fontSize: '1rem' }}>
-                                    {student.score}%
-                                </span>
-                                {expandedId === student.id
-                                    ? <ChevronUp size={16} color="var(--text-muted)" />
-                                    : <ChevronDown size={16} color="var(--text-muted)" />
-                                }
-                            </div>
-                        </button>
-
-                        <AnimatePresence>
-                            {expandedId === student.id && (
-                                <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.3 }}
-                                    style={{ overflow: 'hidden' }}
-                                >
-                                    <div style={{
-                                        padding: '16px 18px', background: 'var(--surface-card)',
-                                        borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', borderTop: 'none',
-                                        display: 'flex', flexDirection: 'column', gap: '16px',
-                                    }}>
-                                        {/* Confidence Badge */}
-                                        {student.confidence != null && (
-                                            <div style={{
-                                                display: 'flex', alignItems: 'center', gap: '8px',
-                                                padding: '8px 12px', borderRadius: '8px',
-                                                background: student.confidence >= 0.8 ? 'rgba(52, 211, 153, 0.06)' : 'rgba(251, 191, 36, 0.06)',
-                                                border: `1px solid ${student.confidence >= 0.8 ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)'}`,
+                                <div style={{ flex: 1, textAlign: 'left' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                                            {student.isCurrent ? 'Current Scan' : `Scan #${student.displayIndex}`}
+                                        </p>
+                                        {student.isCurrent && (
+                                            <span style={{
+                                                fontSize: '0.6rem', fontWeight: 700, padding: '2px 6px',
+                                                background: 'var(--lymbic-purple)', color: 'white',
+                                                borderRadius: 6, textTransform: 'uppercase',
                                             }}>
-                                                <BarChart3 size={12} color={student.confidence >= 0.8 ? 'var(--logic-green)' : '#fbbf24'} />
-                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                    Confidence: {Math.round(student.confidence * 100)}%
-                                                </span>
-                                            </div>
-                                        )}
-
-                                        {/* Logic Trace */}
-                                        {student.logicTrace.steps.length > 0 && (
-                                            <div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                                                    <Brain size={14} color="var(--lymbic-purple-light)" />
-                                                    <span className="text-caption" style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>LOGIC TRACE</span>
-                                                </div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                    {student.logicTrace.steps.map((step, si) => {
-                                                        const isDivergence = student.logicTrace.divergence !== null && si >= student.logicTrace.divergence;
-                                                        return (
-                                                            <div key={si} style={{
-                                                                display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px',
-                                                                borderRadius: '6px',
-                                                                background: isDivergence ? 'rgba(239, 68, 68, 0.08)' : 'rgba(52, 211, 153, 0.06)',
-                                                                border: `1px solid ${isDivergence ? 'rgba(239, 68, 68, 0.2)' : 'rgba(52, 211, 153, 0.15)'}`,
-                                                            }}>
-                                                                {isDivergence
-                                                                    ? <AlertTriangle size={12} color="var(--grade-f)" />
-                                                                    : <CheckCircle2 size={12} color="var(--logic-green)" />
-                                                                }
-                                                                <span style={{
-                                                                    fontSize: '0.78rem',
-                                                                    color: isDivergence ? 'var(--grade-f)' : 'var(--text-secondary)',
-                                                                }}>
-                                                                    Step {si + 1}: {step}
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Teacher Twin Feedback */}
-                                        <div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                                                <MessageSquare size={14} color="var(--logic-green)" />
-                                                <span className="text-caption" style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>TEACHER FEEDBACK</span>
-                                            </div>
-                                            <div className="chat-bubble chat-bubble-ai" style={{ maxWidth: '100%', fontSize: '0.85rem', lineHeight: 1.5 }}>
-                                                {student.feedback}
-                                            </div>
-                                        </div>
-
-                                        {/* Flag Button */}
-                                        {student.traceId && !corrections[student.id] && (
-                                            <motion.button
-                                                whileTap={{ scale: 0.97 }}
-                                                onClick={() => handleFlag(student)}
-                                                style={{
-                                                    padding: '8px 14px', fontSize: '0.75rem',
-                                                    background: 'rgba(239, 68, 68, 0.06)',
-                                                    border: '1px solid rgba(239, 68, 68, 0.15)',
-                                                    borderRadius: '8px', color: 'var(--grade-f)',
-                                                    cursor: 'pointer', fontWeight: 600,
-                                                    display: 'flex', alignItems: 'center', gap: '6px',
-                                                    alignSelf: 'flex-start',
-                                                }}
-                                            >
-                                                <AlertTriangle size={12} /> Flag as Incorrect
-                                            </motion.button>
-                                        )}
-                                        {corrections[student.id] && (
-                                            <p style={{ color: 'var(--logic-green)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <CheckCircle2 size={12} /> Flagged for review
-                                            </p>
+                                                NEW
+                                            </span>
                                         )}
                                     </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                            {student.errorType || 'No errors detected'}
+                                        </p>
+                                        {student.timestamp && (
+                                            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', opacity: 0.6 }}>
+                                                · {timeAgo(student.timestamp)}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{ color: student.gradeColor, fontWeight: 700, fontSize: '1rem' }}>
+                                        {student.score}%
+                                    </span>
+                                    {expandedId === student.id
+                                        ? <ChevronUp size={16} color="var(--text-muted)" />
+                                        : <ChevronDown size={16} color="var(--text-muted)" />
+                                    }
+                                </div>
+                            </div>
+
+                            <AnimatePresence>
+                                {expandedId === student.id && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        transition={{ duration: 0.3 }}
+                                        style={{ overflow: 'hidden' }}
+                                    >
+                                        <div style={{
+                                            padding: '16px 18px', background: 'var(--surface-card)', // slightly darker contrast area
+                                            borderTop: '1px solid var(--surface-glass-border)',
+                                            display: 'flex', flexDirection: 'column', gap: '16px',
+                                        }}>
+                                            {/* Confidence Badge */}
+                                            {student.confidence != null && (
+                                                <div style={{
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                    padding: '8px 12px', borderRadius: '8px',
+                                                    background: student.confidence >= 0.8 ? 'rgba(52, 211, 153, 0.06)' : 'rgba(251, 191, 36, 0.06)',
+                                                    border: `1px solid ${student.confidence >= 0.8 ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)'}`,
+                                                }}>
+                                                    <BarChart3 size={12} color={student.confidence >= 0.8 ? 'var(--logic-green)' : '#fbbf24'} />
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                        Confidence: {Math.round(student.confidence * 100)}%
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {/* Logic Trace */}
+                                            {student.logicTrace.steps.length > 0 && (
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                                                        <Brain size={14} color="var(--lymbic-purple-light)" />
+                                                        <span className="text-caption" style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>LOGIC TRACE</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                        {student.logicTrace.steps.map((step, si) => {
+                                                            const isDivergence = student.logicTrace.divergence !== null && si >= student.logicTrace.divergence;
+                                                            return (
+                                                                <div key={si} style={{
+                                                                    display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px',
+                                                                    borderRadius: '6px',
+                                                                    background: isDivergence ? 'rgba(239, 68, 68, 0.08)' : 'rgba(52, 211, 153, 0.06)',
+                                                                    border: `1px solid ${isDivergence ? 'rgba(239, 68, 68, 0.2)' : 'rgba(52, 211, 153, 0.15)'}`,
+                                                                }}>
+                                                                    {isDivergence
+                                                                        ? <AlertTriangle size={12} color="var(--grade-f)" />
+                                                                        : <CheckCircle2 size={12} color="var(--logic-green)" />
+                                                                    }
+                                                                    <span style={{
+                                                                        fontSize: '0.78rem',
+                                                                        color: isDivergence ? 'var(--grade-f)' : 'var(--text-secondary)',
+                                                                    }}>
+                                                                        Step {si + 1}: {step}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Teacher Twin Feedback */}
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                                                    <MessageSquare size={14} color="var(--logic-green)" />
+                                                    <span className="text-caption" style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>TEACHER FEEDBACK</span>
+                                                </div>
+                                                <div className="chat-bubble chat-bubble-ai" style={{ maxWidth: '100%', fontSize: '0.85rem', lineHeight: 1.5 }}>
+                                                    {student.feedback}
+                                                </div>
+                                            </div>
+
+                                            {/* Flag Button */}
+                                            {student.traceId && !corrections[student.id] && (
+                                                <AdaptiveButton
+                                                    variant="ghost"
+                                                    onClick={(e) => { e.stopPropagation(); handleFlag(student); }}
+                                                    style={{
+                                                        padding: '8px 14px', fontSize: '0.75rem',
+                                                        background: 'rgba(239, 68, 68, 0.06)',
+                                                        border: '1px solid rgba(239, 68, 68, 0.15)',
+                                                        color: 'var(--grade-f)', gap: '6px',
+                                                        alignSelf: 'flex-start',
+                                                    }}
+                                                >
+                                                    <AlertTriangle size={12} /> Flag as Incorrect
+                                                </AdaptiveButton>
+                                            )}
+                                            {corrections[student.id] && (
+                                                <p style={{ color: 'var(--logic-green)', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <CheckCircle2 size={12} /> Flagged for review
+                                                </p>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </AdaptiveCard>
                     </motion.div>
                 ))}
             </div>

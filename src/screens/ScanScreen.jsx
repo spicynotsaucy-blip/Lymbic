@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboarding } from '../context/OnboardingContext';
+import { useAdaptiveUI } from '../hooks/useAdaptiveUI'; // [NEW]
+import AdaptiveButton from '../components/AdaptiveButton'; // [NEW]
 import ScanAnimation from '../components/ScanAnimation';
 import { Camera, X, ShieldAlert, RefreshCw, FlipHorizontal, Lightbulb, Loader2, ArrowRight, Check } from 'lucide-react';
 import { normalizeAndStore } from '../lib/storageLayer';
@@ -11,6 +13,7 @@ import DocumentOverlay from '../components/DocumentOverlay';
 export default function ScanScreen() {
     const navigate = useNavigate();
     const { data, setScanResult } = useOnboarding();
+    const { setEmotion } = useAdaptiveUI(); // [NEW]
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
@@ -32,6 +35,11 @@ export default function ScanScreen() {
     // Adaptive intelligence pipeline — detection + quality + analysis
     const scanner = useSmartScanner(videoRef, { autoCapture: false, analysisMode: 'full' });
     const detection = scanner.detection;
+
+    // [NEW] Set initial focus mood
+    useEffect(() => {
+        setEmotion('focus');
+    }, [setEmotion]);
 
     // ═══════════════════════════════════════════
     //  CAMERA LIFECYCLE
@@ -69,8 +77,9 @@ export default function ScanScreen() {
         } catch (err) {
             console.error('Camera access error:', err);
             setPhase('denied');
+            setEmotion('error'); // [NEW]
         }
-    }, []);
+    }, [setEmotion]);
 
     // Cleanup camera on unmount
     useEffect(() => {
@@ -95,6 +104,7 @@ export default function ScanScreen() {
     const handleAllowClick = () => {
         startCamera(facingMode);
         setPhase('preview');
+        setEmotion('focus'); // [NEW]
     };
 
     const handleFlipCamera = () => {
@@ -153,6 +163,7 @@ export default function ScanScreen() {
                     // Batch mode: Stay on screen, show toast, reset
                     setScannedCount(prev => prev + 1);
                     setShowSavedToast(true);
+                    setEmotion('success'); // [NEW] Batch success trigger
                     setTimeout(() => setShowSavedToast(false), 2000);
 
                     // Reset for next scan
@@ -166,6 +177,7 @@ export default function ScanScreen() {
                     // Single mode: Navigate immediately
                     setScanResult(stored.success ? stored.result : result.result);
                     setPhase('complete');
+                    setEmotion('success'); // [NEW] Success trigger
                 }
             } else if (result?.reason === 'quality') {
                 setQualityIssue({
@@ -173,6 +185,7 @@ export default function ScanScreen() {
                     suggestion: scanner.qualityAnalysis?.recommendations?.[0] || 'Try better lighting',
                 });
                 setPhase('quality_fail');
+                setEmotion('error'); // [NEW] Quality fail trigger
             } else if (result?.reason === 'duplicate') {
                 setAnalyzeStatus('Duplicate detected — try a different page');
                 setTimeout(() => {
@@ -209,11 +222,13 @@ export default function ScanScreen() {
         setCameraReady(false);
         setFreezeFrame(null);
         setQualityIssue(null);
+        setEmotion('neutral'); // [NEW]
     };
 
     const handleRetryCapture = () => {
         setPhase('preview');
         setQualityIssue(null);
+        setEmotion('focus'); // [NEW]
     };
 
     // ═══════════════════════════════════════════
@@ -269,21 +284,20 @@ export default function ScanScreen() {
                                 </p>
                             </div>
                             <div style={{ display: 'flex', gap: '12px' }}>
-                                <button
-                                    className="btn-secondary"
+                                <AdaptiveButton
+                                    variant="secondary"
                                     style={{ flex: 1, padding: '12px' }}
                                     onClick={() => navigate('/grade')}
                                 >
                                     Not Now
-                                </button>
-                                <motion.button
-                                    className="btn-primary"
+                                </AdaptiveButton>
+                                <AdaptiveButton
+                                    variant="primary"
                                     style={{ flex: 1, padding: '12px' }}
-                                    whileTap={{ scale: 0.97 }}
                                     onClick={handleAllowClick}
                                 >
                                     Allow Camera
-                                </motion.button>
+                                </AdaptiveButton>
                             </div>
                         </motion.div>
                     </motion.div>
@@ -328,21 +342,20 @@ export default function ScanScreen() {
                                 </p>
                             </div>
                             <div style={{ display: 'flex', gap: '12px' }}>
-                                <button
-                                    className="btn-secondary"
+                                <AdaptiveButton
+                                    variant="secondary"
                                     style={{ flex: 1, padding: '12px' }}
                                     onClick={() => navigate('/grade')}
                                 >
                                     Go Back
-                                </button>
-                                <motion.button
-                                    className="btn-primary"
+                                </AdaptiveButton>
+                                <AdaptiveButton
+                                    variant="primary"
                                     style={{ flex: 1, padding: '12px', gap: '6px' }}
-                                    whileTap={{ scale: 0.97 }}
                                     onClick={handleRetry}
                                 >
                                     <RefreshCw size={16} /> Retry
-                                </motion.button>
+                                </AdaptiveButton>
                             </div>
                         </motion.div>
                     </motion.div>
@@ -369,10 +382,10 @@ export default function ScanScreen() {
                                 </p>
                             </div>
                             <div style={{ display: 'flex', gap: '12px' }}>
-                                <button className="btn-secondary" style={{ flex: 1, padding: '12px' }} onClick={() => navigate('/grade')}>Cancel</button>
-                                <motion.button className="btn-primary" style={{ flex: 1, padding: '12px', gap: '6px' }} whileTap={{ scale: 0.97 }} onClick={handleRetryCapture}>
+                                <AdaptiveButton variant="secondary" style={{ flex: 1, padding: '12px' }} onClick={() => navigate('/grade')}>Cancel</AdaptiveButton>
+                                <AdaptiveButton variant="primary" style={{ flex: 1, padding: '12px', gap: '6px' }} onClick={handleRetryCapture}>
                                     <RefreshCw size={16} /> Try Again
-                                </motion.button>
+                                </AdaptiveButton>
                             </div>
                         </motion.div>
                     </motion.div>
@@ -413,13 +426,13 @@ export default function ScanScreen() {
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 20,
                 background: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 100%)',
             }}>
-                <motion.button
-                    whileTap={{ scale: 0.95 }}
+                <AdaptiveButton
+                    variant="ghost"
                     onClick={() => navigate('/')}
-                    style={{ padding: 8, background: 'rgba(255,255,255,0.2)', borderRadius: '50%', backdropFilter: 'blur(10px)', border: 'none', color: 'white', cursor: 'pointer' }}
+                    style={{ padding: 8, background: 'rgba(255,255,255,0.2)', borderRadius: '50%', backdropFilter: 'blur(10px)', border: 'none', color: 'white' }}
                 >
                     <X size={24} />
-                </motion.button>
+                </AdaptiveButton>
 
                 {/* Batch Mode Toggle */}
                 {phase !== 'requesting' && (
@@ -448,13 +461,13 @@ export default function ScanScreen() {
                     </div>
                 )}
 
-                <motion.button
-                    whileTap={{ scale: 0.95 }}
+                <AdaptiveButton
+                    variant="ghost"
                     onClick={handleFlipCamera}
-                    style={{ padding: 8, background: 'rgba(255,255,255,0.2)', borderRadius: '50%', backdropFilter: 'blur(10px)', border: 'none', color: 'white', cursor: 'pointer' }}
+                    style={{ padding: 8, background: 'rgba(255,255,255,0.2)', borderRadius: '50%', backdropFilter: 'blur(10px)', border: 'none', color: 'white' }}
                 >
                     <FlipHorizontal size={24} />
-                </motion.button>
+                </AdaptiveButton>
             </div>
 
             {/* ─── LIVE CAMERA FEED ─── */}
@@ -645,24 +658,22 @@ export default function ScanScreen() {
             {/* ─── BATCH MODE FAB ─── */}
             <AnimatePresence>
                 {isBatchMode && scannedCount > 0 && phase !== 'scanning' && (
-                    <motion.button
-                        initial={{ opacity: 0, scale: 0.8, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.8, y: 20 }}
-                        onClick={finishBatch}
-                        style={{
-                            position: 'absolute', bottom: 120, right: 30, zIndex: 30,
-                            background: 'var(--lymbic-purple)', color: 'white',
-                            border: 'none', borderRadius: 30, padding: '12px 24px',
-                            fontWeight: 600, boxShadow: '0 4px 12px rgba(139, 92, 246, 0.4)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8
-                        }}
-                    >
-                        <span>Finish Batch ({scannedCount})</span>
-                        <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: '50%', padding: 4 }}>
-                            <ArrowRight size={16} />
-                        </div>
-                    </motion.button>
+                    <div style={{ position: 'absolute', bottom: 120, right: 30, zIndex: 30 }}>
+                        <AdaptiveButton
+                            variant="primary"
+                            onClick={finishBatch}
+                            style={{
+                                borderRadius: 30, padding: '12px 24px',
+                                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.4)',
+                                gap: 8
+                            }}
+                        >
+                            <span>Finish Batch ({scannedCount})</span>
+                            <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: '50%', padding: 4, display: 'flex' }}>
+                                <ArrowRight size={16} />
+                            </div>
+                        </AdaptiveButton>
+                    </div>
                 )}
             </AnimatePresence>
 

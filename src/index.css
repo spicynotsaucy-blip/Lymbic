@@ -59,6 +59,18 @@
   /* Transitions */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Emotion Fallbacks (Adaptive UI) */
+  --emotion-primary-h: 270;
+  --emotion-primary-s: 60%;
+  --emotion-primary-l: 50%;
+  --emotion-accent-h: 280;
+  --emotion-glow-intensity: 0.3;
+  --emotion-blur: 20px;
+  --emotion-scale: 1;
+  --emotion-pulse-rate: 0s;
+  --emotion-spring-stiffness: 300;
+  --emotion-spring-damping: 30;
 }
 
 /* ============================================
@@ -542,4 +554,15 @@ button {
   .screen {
     padding: var(--space-md);
   }
+}
+
+/* ============================================
+   UTILITIES
+   ============================================ */
+
+.reduce-motion * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
