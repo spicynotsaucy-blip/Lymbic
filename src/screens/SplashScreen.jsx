@@ -104,9 +104,7 @@ export default function SplashScreen() {
                     transition={{ delay: 0.2, duration: 1, ease: [0.16, 1, 0.3, 1] }}
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}
                 >
-                    {/* Logo container with breathing effect */}
                     <div style={{ position: 'relative' }}>
-                        {/* Outer ring 1 */}
                         <motion.div
                             animate={{
                                 scale: [1, 1.15, 1],
@@ -120,7 +118,6 @@ export default function SplashScreen() {
                                 border: '1px solid var(--lymbic-purple-light)',
                             }}
                         />
-                        {/* Outer ring 2 */}
                         <motion.div
                             animate={{
                                 scale: [1, 1.25, 1],
@@ -134,8 +131,6 @@ export default function SplashScreen() {
                                 border: '1px solid var(--accent-cyan)',
                             }}
                         />
-
-                        {/* Main logo */}
                         <motion.div
                             animate={{
                                 boxShadow: [
@@ -170,8 +165,6 @@ export default function SplashScreen() {
                             <Sparkles size={44} color="white" strokeWidth={1.5} style={{ position: 'relative', zIndex: 1 }} />
                         </motion.div>
                     </div>
-
-                    {/* Brand name */}
                     <motion.h1
                         className="text-hero"
                         initial={{ opacity: 0, y: 20 }}

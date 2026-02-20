@@ -11,6 +11,9 @@ import { SmartMock } from '../utils/SmartMock';
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 const USE_MOCK = import.meta.env.VITE_MOCK_API === 'true';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const USE_EDGE_FUNCTION = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 const promptEngine = new AdaptivePromptEngine();
 const calibrator = new ConfidenceCalibrator();
@@ -37,11 +40,34 @@ const MOCK_RESULT = {
 };
 
 /**
- * Call Gemini vision API with a base64 image and a text prompt.
+ * Call Gemini via Supabase Edge Function (hides API key). Used when Supabase is configured.
+ * Uses session JWT when user is logged in so Edge Function can enforce auth if needed.
  */
-async function callGemini(imageBase64, prompt) {
-    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+async function callGeminiViaEdgeFunction(imageBase64, prompt) {
+    const { getAuthToken } = await import('./storageLayer');
+    const token = await getAuthToken();
+    if (!token) throw new Error('Not configured');
+    const url = `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/analyze-document`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ imageBase64, prompt }),
+    });
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Analysis service error ${res.status}: ${err}`);
+    }
+    return res.json();
+}
 
+/**
+ * Call Gemini vision API directly (dev only; key exposed in client).
+ */
+async function callGeminiDirect(imageBase64, prompt) {
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
     const body = {
         contents: [{
             parts: [
@@ -54,23 +80,30 @@ async function callGemini(imageBase64, prompt) {
             responseMimeType: 'application/json',
         },
     };
-
     const res = await fetch(GEMINI_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-
     if (!res.ok) {
         const err = await res.text();
         throw new Error(`Gemini API error ${res.status}: ${err}`);
     }
-
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('Empty response from Gemini');
-
     return parseJSON(text);
+}
+
+/**
+ * Call Gemini vision API with a base64 image and a text prompt.
+ * Prefers Edge Function when Supabase is configured (key stays server-side).
+ */
+async function callGemini(imageBase64, prompt) {
+    if (USE_EDGE_FUNCTION) {
+        return callGeminiViaEdgeFunction(imageBase64, prompt);
+    }
+    return callGeminiDirect(imageBase64, prompt);
 }
 
 /**
@@ -145,15 +178,17 @@ Respond with JSON:
 export async function analyzeWithLogicEngine(imageBase64, problemContext = {}, options = {}) {
     const { mode = 'full', imageQuality = null, previousPages = [], rubric = null, feedbackStyle } = options;
 
-    // No API key AND not using smart mock → static fallback
-    if (!GEMINI_API_KEY && !USE_MOCK) {
-        console.warn('[Lymbic] No VITE_GEMINI_API_KEY — using mock analysis');
+    const canCallGemini = USE_EDGE_FUNCTION || Boolean(GEMINI_API_KEY);
+
+    // No way to call Gemini (no Edge Function, no client key) AND not using smart mock → static fallback
+    if (!canCallGemini && !USE_MOCK) {
+        console.warn('[Lymbic] No Supabase Edge Function and no VITE_GEMINI_API_KEY — using mock analysis');
         await new Promise(r => setTimeout(r, 2200));
         return { ...MOCK_RESULT, _mock: true, timestamp: Date.now() };
     }
 
-    // Smart mock mode — quality-aware probabilistic responses
-    if (USE_MOCK && !GEMINI_API_KEY) {
+    // Smart mock mode — quality-aware probabilistic responses (when explicitly enabled and no backend)
+    if (USE_MOCK && !canCallGemini) {
         console.log('[Lymbic] Smart mock mode');
         const mockResult = await smartMock.analyze({ image: imageBase64 });
         if (!mockResult.success) {
@@ -387,7 +422,7 @@ export async function runAnalysisPipeline(capture, readinessState, options = {})
     console.log(`[Pipeline ${pid}] All gates passed. Executing analysis…`);
     let analysisResult;
     try {
-        if (USE_MOCK && !GEMINI_API_KEY) {
+        if (USE_MOCK && !USE_EDGE_FUNCTION && !GEMINI_API_KEY) {
             analysisResult = await smartMock.analyze({ ...capture, readiness: readinessState });
         } else {
             try {

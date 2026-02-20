@@ -108,13 +108,18 @@ export default function ResultsDashboard() {
     const [storedTraces, setStoredTraces] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load traces from localStorage on mount
+    // Load traces (Supabase when configured, else localStorage) on mount
     useEffect(() => {
         const load = async () => {
-            const { getAllTraces } = await import('../lib/storageLayer');
-            const traces = getAllTraces();
-            setStoredTraces(traces);
-            setIsLoading(false);
+            try {
+                const { getAllTraces } = await import('../lib/storageLayer');
+                const traces = await getAllTraces();
+                setStoredTraces(traces);
+            } catch (e) {
+                console.warn('[Lymbic] Load traces failed:', e);
+            } finally {
+                setIsLoading(false);
+            }
         };
         load();
     }, []);

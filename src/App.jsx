@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import SplashScreen from './screens/SplashScreen';
+import LoginScreen from './screens/LoginScreen';
 import OnboardingWizard from './screens/OnboardingWizard';
 import GradeToday from './screens/GradeToday';
 import ScanScreen from './screens/ScanScreen';
@@ -20,6 +21,7 @@ export default function App() {
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<SplashScreen />} />
+          <Route path="/login" element={<LoginScreen />} />
           <Route path="/onboarding" element={<OnboardingWizard />} />
           <Route path="/grade" element={<GradeToday />} />
           <Route path="/scan" element={<ScanScreen />} />

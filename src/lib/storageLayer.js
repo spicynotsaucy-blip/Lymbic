@@ -8,12 +8,22 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Lazy-load Supabase only if configured
 let _supabase = null;
-async function getSupabase() {
+export async function getSupabase() {
     if (!SUPABASE_URL || !SUPABASE_KEY) return null;
     if (_supabase) return _supabase;
     const { createClient } = await import('@supabase/supabase-js');
     _supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
     return _supabase;
+}
+
+/**
+ * Returns the JWT to use for Edge Function / API calls: session access_token when logged in, else anon key.
+ */
+export async function getAuthToken() {
+    const supabase = await getSupabase();
+    if (!supabase) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? SUPABASE_KEY;
 }
 
 /**
@@ -48,7 +58,14 @@ export async function normalizeAndStore(rawResult, metadata, sessionId) {
 
         const supabase = await getSupabase();
         if (supabase) {
-            await supabase.from('analysis_errors').insert(errorRecord);
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user?.id) {
+                await supabase.from('analysis_errors').insert({ ...errorRecord, user_id: session.user.id });
+            } else {
+                const errors = JSON.parse(localStorage.getItem('lymbic_errors') || '[]');
+                errors.push(errorRecord);
+                localStorage.setItem('lymbic_errors', JSON.stringify(errors));
+            }
         } else {
             const errors = JSON.parse(localStorage.getItem('lymbic_errors') || '[]');
             errors.push(errorRecord);
@@ -71,20 +88,18 @@ export async function normalizeAndStore(rawResult, metadata, sessionId) {
         created_at: new Date().toISOString(),
     };
 
-    // 2. Try Supabase
+    // 2. Try Supabase (with user_id when authenticated; RLS requires auth)
     const supabase = await getSupabase();
     if (supabase) {
-        const { data, error } = await supabase
-            .from('logic_traces')
-            .insert(record)
-            .select()
-            .single();
-
-        if (error) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+            const { data, error } = await supabase
+                .from('logic_traces')
+                .insert({ ...record, user_id: session.user.id })
+                .select()
+                .single();
+            if (!error) return { success: true, id: data.id, result: validation.data };
             console.error('[Lymbic] Supabase insert failed:', error);
-            // Fall through to localStorage
-        } else {
-            return { success: true, id: data.id, result: validation.data };
         }
     }
 
@@ -111,8 +126,11 @@ export async function submitCorrection(traceId, correction) {
 
     const supabase = await getSupabase();
     if (supabase) {
-        const { error } = await supabase.from('corrections').insert(record);
-        if (!error) return { success: true };
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+            const { error } = await supabase.from('corrections').insert({ ...record, user_id: session.user.id });
+            if (!error) return { success: true };
+        }
     }
 
     // localStorage fallback
@@ -130,17 +148,75 @@ export function getLocalTraces() {
 }
 
 /**
- * Get all traces sorted by created_at descending (most recent first).
+ * Fetch all traces from Supabase (when configured). Returns [] on error or no Supabase.
  */
-export function getAllTraces() {
-    const traces = getLocalTraces();
-    return traces.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+export async function getAllTracesFromSupabase() {
+    const supabase = await getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+        .from('logic_traces')
+        .select('*')
+        .order('created_at', { ascending: false });
+    if (error) {
+        console.warn('[Lymbic] Supabase get traces failed:', error);
+        return [];
+    }
+    return data || [];
 }
 
 /**
- * Get traces for a specific session ID.
+ * Fetch traces for a session from Supabase. Returns [] on error or no Supabase.
  */
-export function getSessionTraces(sessionId) {
+export async function getSessionTracesFromSupabase(sessionId) {
+    if (!sessionId) return [];
+    const supabase = await getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+        .from('logic_traces')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: false });
+    if (error) {
+        console.warn('[Lymbic] Supabase get session traces failed:', error);
+        return [];
+    }
+    return data || [];
+}
+
+/**
+ * Get all traces sorted by created_at descending. Uses Supabase when configured and request succeeds; falls back to localStorage otherwise.
+ * @returns {Promise<Array>}
+ */
+export async function getAllTraces() {
+    const supabase = await getSupabase();
+    if (supabase) {
+        const { data, error } = await supabase
+            .from('logic_traces')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (!error) return data || [];
+        console.warn('[Lymbic] Supabase get traces failed:', error);
+    }
+    const local = getLocalTraces();
+    return local.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+/**
+ * Get traces for a specific session ID. Uses Supabase when configured and request succeeds; falls back to localStorage otherwise.
+ * @returns {Promise<Array>}
+ */
+export async function getSessionTraces(sessionId) {
+    if (!sessionId) return getLocalTraces().filter(t => t.session_id === sessionId);
+    const supabase = await getSupabase();
+    if (supabase) {
+        const { data, error } = await supabase
+            .from('logic_traces')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('created_at', { ascending: false });
+        if (!error) return data || [];
+        console.warn('[Lymbic] Supabase get session traces failed:', error);
+    }
     return getLocalTraces().filter(t => t.session_id === sessionId);
 }
 
